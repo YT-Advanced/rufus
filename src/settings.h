@@ -1,7 +1,7 @@
 /*
  * Rufus: The Reliable USB Formatting Utility
  * Settings access, through either registry or INI file
- * Copyright © 2015-2022 Pete Batard <pete@akeo.ie>
+ * Copyright © 2015-2024 Pete Batard <pete@akeo.ie>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 #include <windows.h>
 #include <stdint.h>
 #include "rufus.h"
+#include "msapi_utf8.h"
 #include "registry.h"
 
 #pragma once
@@ -34,13 +35,16 @@ extern char* ini_file;
 #define SETTING_DEFAULT_THREAD_PRIORITY     "DefaultThreadPriority"
 #define SETTING_DISABLE_FAKE_DRIVES_CHECK   "DisableFakeDrivesCheck"
 #define SETTING_DISABLE_LGP                 "DisableLGP"
+#define SETTING_DISABLE_RUFUS_MBR           "DisableRufusMBR"
 #define SETTING_DISABLE_SECURE_BOOT_NOTICE  "DisableSecureBootNotice"
 #define SETTING_DISABLE_VHDS                "DisableVHDs"
 #define SETTING_ENABLE_EXTRA_HASHES         "EnableExtraHashes"
 #define SETTING_ENABLE_FILE_INDEXING        "EnableFileIndexing"
+#define SETTING_ENABLE_RUNTIME_VALIDATION   "EnableRuntimeValidation"
 #define SETTING_ENABLE_USB_DEBUG            "EnableUsbDebug"
 #define SETTING_ENABLE_VMDK_DETECTION       "EnableVmdkDetection"
 #define SETTING_ENABLE_WIN_DUAL_EFI_BIOS    "EnableWindowsDualUefiBiosMode"
+#define SETTING_EXPERT_MODE                 "ExpertMode"
 #define SETTING_FORCE_LARGE_FAT32_FORMAT    "ForceLargeFat32Formatting"
 #define SETTING_IGNORE_BOOT_MARKER          "IgnoreBootMarker"
 #define SETTING_INCLUDE_BETAS               "CheckForBetas"
@@ -52,6 +56,7 @@ extern char* ini_file;
 #define SETTING_USE_UDF_VERSION             "UseUdfVersion"
 #define SETTING_USE_VDS                     "UseVds"
 #define SETTING_PERSISTENT_LOG              "PersistentLog"
+#define SETTING_PREFERRED_SAVE_IMAGE_TYPE   "PreferredSaveImageType"
 #define SETTING_PRESERVE_TIMESTAMPS         "PreserveTimestamps"
 #define SETTING_VERBOSE_UPDATES             "VerboseUpdateCheck"
 #define SETTING_WUE_OPTIONS                 "WindowsUserExperienceOptions"

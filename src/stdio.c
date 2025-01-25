@@ -1,8 +1,8 @@
 /*
  * Rufus: The Reliable USB Formatting Utility
  * Standard User I/O Routines (logging, status, error, etc.)
+ * Copyright © 2011-2024 Pete Batard <pete@akeo.ie>
  * Copyright © 2020 Mattiwatti <mattiwatti@gmail.com>
- * Copyright © 2011-2021 Pete Batard <pete@akeo.ie>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,26 +27,44 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <wininet.h>
 #include <winternl.h>
+#include <dbghelp.h>
 #include <assert.h>
 #include <ctype.h>
 #include <math.h>
 
 #include "rufus.h"
+#include "missing.h"
+#include "settings.h"
 #include "resource.h"
 #include "msapi_utf8.h"
 #include "localization.h"
+#include "bled/bled.h"
 
-#define FACILITY_WIM 322
+#define FACILITY_WIM            322
+#define DEFAULT_BASE_ADDRESS    0x100000000ULL
+#define RSDS_SIG                0x53445352
 
 /*
  * Globals
  */
+const HANDLE hRufus = (HANDLE)0x0000005275667573ULL;	// "\0\0\0Rufus"
 HWND hStatus;
 size_t ubuffer_pos = 0;
 char ubuffer[UBUFFER_SIZE];	// Buffer for ubpushf() messages we don't log right away
+static uint64_t archive_size;
 
-void _uprintf(const char *format, ...)
+#pragma pack(push, 1)
+typedef struct {
+	DWORD   Signature;	// "RSDS"
+	GUID    Guid;
+	DWORD   Age;
+	CHAR    PdbName[1];
+} debug_info_t;
+#pragma pack(pop)
+
+void uprintf(const char *format, ...)
 {
 	static char buf[4096];
 	char* p = buf;
@@ -67,25 +85,25 @@ void _uprintf(const char *format, ...)
 	*p++ = '\n';
 	*p   = '\0';
 
-	// Yay, Windows 10 *FINALLY* added actual Unicode support for OutputDebugStringW()!
 	wbuf = utf8_to_wchar(buf);
 	// Send output to Windows debug facility
+	// coverity[dont_call]
 	OutputDebugStringW(wbuf);
 	if ((hLog != NULL) && (hLog != INVALID_HANDLE_VALUE)) {
 		// Send output to our log Window
 		Edit_SetSel(hLog, MAX_LOG_SIZE, MAX_LOG_SIZE);
 		Edit_ReplaceSel(hLog, wbuf);
 		// Make sure the message scrolls into view
-		// (Or see code commented in LogProc:WM_SHOWWINDOW for a less forceful scroll)
 		Edit_Scroll(hLog, Edit_GetLineCount(hLog), 0);
 	}
 	free(wbuf);
 }
 
-void _uprintfs(const char* str)
+void uprintfs(const char* str)
 {
 	wchar_t* wstr;
 	wstr = utf8_to_wchar(str);
+	// coverity[dont_call]
 	OutputDebugStringW(wstr);
 	if ((hLog != NULL) && (hLog != INVALID_HANDLE_VALUE)) {
 		Edit_SetSel(hLog, MAX_LOG_SIZE, MAX_LOG_SIZE);
@@ -107,7 +125,8 @@ uint32_t read_file(const char* path, uint8_t** buf)
 	uint32_t size = (uint32_t)ftell(fd);
 	fseek(fd, 0L, SEEK_SET);
 
-	*buf = malloc(size);
+	// +1 so we can add an extra NUL
+	*buf = malloc(size + 1);
 	if (*buf == NULL) {
 		uprintf("Error: Can't allocate %d bytes buffer for file '%s'", size, path);
 		size = 0;
@@ -117,6 +136,8 @@ uint32_t read_file(const char* path, uint8_t** buf)
 		uprintf("Error: Can't read '%s'", path);
 		size = 0;
 	}
+	// Always NUL terminate the file
+	(*buf)[size] = 0;
 
 out:
 	fclose(fd);
@@ -182,7 +203,7 @@ void DumpBufferHex(void *buf, size_t size)
 			uprintf("%s\n", line);
 		line[0] = 0;
 		sprintf(&line[strlen(line)], "  %08x  ", (unsigned int)i);
-		for(j=0,k=0; k<16; j++,k++) {
+		for(j = 0,k = 0; k < 16; j++,k++) {
 			if (i+j < size) {
 				sprintf(&line[strlen(line)], "%02x", buffer[i+j]);
 			} else {
@@ -191,7 +212,7 @@ void DumpBufferHex(void *buf, size_t size)
 			sprintf(&line[strlen(line)], " ");
 		}
 		sprintf(&line[strlen(line)], " ");
-		for(j=0,k=0; k<16; j++,k++) {
+		for(j = 0,k = 0; k < 16; j++,k++) {
 			if (i+j < size) {
 				if ((buffer[i+j] < 32) || (buffer[i+j] > 126)) {
 					sprintf(&line[strlen(line)], ".");
@@ -204,472 +225,65 @@ void DumpBufferHex(void *buf, size_t size)
 	uprintf("%s\n", line);
 }
 
-// Count on Microsoft to add a new API while not bothering updating the existing error facilities,
-// so that the new error messages have to be handled manually. Now, since I don't have all day:
-// 1. Copy text from https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-vds/5102cc53-3143-4268-ba4c-6ea39e999ab4
-// 2. awk '{l[NR%7]=$0} {if (NR%7==0) printf "\tcase %s:\t// %s\n\t\treturn \"%s\";\n", l[1], l[3], l[6]}' vds.txt
-// 3. Filter out the crap we don't need.
-static const char *GetVdsError(DWORD error_code)
-{
-	switch (error_code) {
-	case 0x80042400:	// VDS_E_NOT_SUPPORTED
-		return "The operation is not supported by the object.";
-	case 0x80042401:	// VDS_E_INITIALIZED_FAILED
-		return "VDS or the provider failed to initialize.";
-	case 0x80042402:	// VDS_E_INITIALIZE_NOT_CALLED
-		return "VDS did not call the hardware provider's initialization method.";
-	case 0x80042403:	// VDS_E_ALREADY_REGISTERED
-		return "The provider is already registered.";
-	case 0x80042404:	// VDS_E_ANOTHER_CALL_IN_PROGRESS
-		return "A concurrent second call is made on an object before the first call is completed.";
-	case 0x80042405:	// VDS_E_OBJECT_NOT_FOUND
-		return "The specified object was not found.";
-	case 0x80042406:	// VDS_E_INVALID_SPACE
-		return "The specified space is neither free nor valid.";
-	case 0x80042407:	// VDS_E_PARTITION_LIMIT_REACHED
-		return "No more partitions can be created on the specified disk.";
-	case 0x80042408:	// VDS_E_PARTITION_NOT_EMPTY
-		return "The extended partition is not empty.";
-	case 0x80042409:	// VDS_E_OPERATION_PENDING
-		return "The operation is still in progress.";
-	case 0x8004240A:	// VDS_E_OPERATION_DENIED
-		return "The operation is not permitted on the specified disk, partition, or volume.";
-	case 0x8004240B:	// VDS_E_OBJECT_DELETED
-		return "The object no longer exists.";
-	case 0x8004240C:	// VDS_E_CANCEL_TOO_LATE
-		return "The operation can no longer be canceled.";
-	case 0x8004240D:	// VDS_E_OPERATION_CANCELED
-		return "The operation has already been canceled.";
-	case 0x8004240E:	// VDS_E_CANNOT_EXTEND
-		return "The file system does not support extending this volume.";
-	case 0x8004240F:	// VDS_E_NOT_ENOUGH_SPACE
-		return "There is not enough space to complete the operation.";
-	case 0x80042410:	// VDS_E_NOT_ENOUGH_DRIVE
-		return "There are not enough free disk drives in the subsystem to complete the operation.";
-	case 0x80042411:	// VDS_E_BAD_COOKIE
-		return "The cookie was not found.";
-	case 0x80042412:	// VDS_E_NO_MEDIA
-		return "There is no removable media in the drive.";
-	case 0x80042413:	// VDS_E_DEVICE_IN_USE
-		return "The device is currently in use.";
-	case 0x80042414:	// VDS_E_DISK_NOT_EMPTY
-		return "The disk contains partitions or volumes.";
-	case 0x80042415:	// VDS_E_INVALID_OPERATION
-		return "The specified operation is not valid.";
-	case 0x80042416:	// VDS_E_PATH_NOT_FOUND
-		return "The specified path was not found.";
-	case 0x80042417:	// VDS_E_DISK_NOT_INITIALIZED
-		return "The specified disk has not been initialized.";
-	case 0x80042418:	// VDS_E_NOT_AN_UNALLOCATED_DISK
-		return "The specified disk is not an unallocated disk.";
-	case 0x80042419:	// VDS_E_UNRECOVERABLE_ERROR
-		return "An unrecoverable error occurred. The service MUST shut down.";
-	case 0x0004241A:	// VDS_S_DISK_PARTIALLY_CLEANED
-		return "The clean operation was not a full clean or was canceled before it could be completed.";
-	case 0x8004241B:	// VDS_E_DMADMIN_SERVICE_CONNECTION_FAILED
-		return "The provider failed to connect to the LDMA service.";
-	case 0x8004241C:	// VDS_E_PROVIDER_INITIALIZATION_FAILED
-		return "The provider failed to initialize.";
-	case 0x8004241D:	// VDS_E_OBJECT_EXISTS
-		return "The object already exists.";
-	case 0x8004241E:	// VDS_E_NO_DISKS_FOUND
-		return "No disks were found on the target machine.";
-	case 0x8004241F:	// VDS_E_PROVIDER_CACHE_CORRUPT
-		return "The cache for a provider is corrupt.";
-	case 0x80042420:	// VDS_E_DMADMIN_METHOD_CALL_FAILED
-		return "A method call to the LDMA service failed.";
-	case 0x00042421:	// VDS_S_PROVIDER_ERROR_LOADING_CACHE
-		return "The provider encountered errors while loading the cache.";
-	case 0x80042422:	// VDS_E_PROVIDER_VOL_DEVICE_NAME_NOT_FOUND
-		return "The device form of the volume pathname could not be retrieved.";
-	case 0x80042423:	// VDS_E_PROVIDER_VOL_OPEN
-		return "Failed to open the volume device";
-	case 0x80042424:	// VDS_E_DMADMIN_CORRUPT_NOTIFICATION
-		return "A corrupt notification was sent from the LDMA service.";
-	case 0x80042425:	// VDS_E_INCOMPATIBLE_FILE_SYSTEM
-		return "The file system is incompatible with the specified operation.";
-	case 0x80042426:	// VDS_E_INCOMPATIBLE_MEDIA
-		return "The media is incompatible with the specified operation.";
-	case 0x80042427:	// VDS_E_ACCESS_DENIED
-		return "Access is denied. A VDS operation MUST run elevated.";
-	case 0x80042428:	// VDS_E_MEDIA_WRITE_PROTECTED
-		return "The media is write-protected.";
-	case 0x80042429:	// VDS_E_BAD_LABEL
-		return "The volume label is not valid.";
-	case 0x8004242A:	// VDS_E_CANT_QUICK_FORMAT
-		return "The volume cannot be quick-formatted.";
-	case 0x8004242B:	// VDS_E_IO_ERROR
-		return "An I/O error occurred during the operation.";
-	case 0x8004242C:	// VDS_E_VOLUME_TOO_SMALL
-		return "The volume size is too small.";
-	case 0x8004242D:	// VDS_E_VOLUME_TOO_BIG
-		return "The volume size is too large.";
-	case 0x8004242E:	// VDS_E_CLUSTER_SIZE_TOO_SMALL
-		return "The cluster size is too small.";
-	case 0x8004242F:	// VDS_E_CLUSTER_SIZE_TOO_BIG
-		return "The cluster size is too large.";
-	case 0x80042430:	// VDS_E_CLUSTER_COUNT_BEYOND_32BITS
-		return "The number of clusters is too large to be represented as a 32-bit integer.";
-	case 0x80042431:	// VDS_E_OBJECT_STATUS_FAILED
-		return "The component that the object represents has failed.";
-	case 0x80042432:	// VDS_E_VOLUME_INCOMPLETE
-		return "The volume is incomplete.";
-	case 0x80042433:	// VDS_E_EXTENT_SIZE_LESS_THAN_MIN
-		return "The specified extent size is too small.";
-	case 0x00042434:	// VDS_S_UPDATE_BOOTFILE_FAILED
-		return "The operation was successful, but VDS failed to update the boot options.";
-	case 0x00042436:	// VDS_S_BOOT_PARTITION_NUMBER_CHANGE
-	case 0x80042436:	// VDS_E_BOOT_PARTITION_NUMBER_CHANGE
-		return "The boot partition's partition number will change as a result of the operation.";
-	case 0x80042437:	// VDS_E_NO_FREE_SPACE
-		return "The specified disk does not have enough free space to complete the operation.";
-	case 0x80042438:	// VDS_E_ACTIVE_PARTITION
-		return "An active partition was detected on the selected disk.";
-	case 0x80042439:	// VDS_E_PARTITION_OF_UNKNOWN_TYPE
-		return "The partition information cannot be read.";
-	case 0x8004243A:	// VDS_E_LEGACY_VOLUME_FORMAT
-		return "A partition with an unknown type was detected on the specified disk.";
-	case 0x8004243C:	// VDS_E_MIGRATE_OPEN_VOLUME
-		return "A volume on the specified disk could not be opened.";
-	case 0x8004243D:	// VDS_E_VOLUME_NOT_ONLINE
-		return "The volume is not online.";
-	case 0x8004243E:	// VDS_E_VOLUME_NOT_HEALTHY
-		return "The volume is failing or has failed.";
-	case 0x8004243F:	// VDS_E_VOLUME_SPANS_DISKS
-		return "The volume spans multiple disks.";
-	case 0x80042440:	// VDS_E_REQUIRES_CONTIGUOUS_DISK_SPACE
-		return "The volume does not consist of a single disk extent.";
-	case 0x80042441:	// VDS_E_BAD_PROVIDER_DATA
-		return "A provider returned bad data.";
-	case 0x80042442:	// VDS_E_PROVIDER_FAILURE
-		return "A provider failed to complete an operation.";
-	case 0x00042443:	// VDS_S_VOLUME_COMPRESS_FAILED
-		return "The file system was formatted successfully but could not be compressed.";
-	case 0x80042444:	// VDS_E_PACK_OFFLINE
-		return "The pack is offline.";
-	case 0x80042445:	// VDS_E_VOLUME_NOT_A_MIRROR
-		return "The volume is not a mirror.";
-	case 0x80042446:	// VDS_E_NO_EXTENTS_FOR_VOLUME
-		return "No extents were found for the volume.";
-	case 0x80042447:	// VDS_E_DISK_NOT_LOADED_TO_CACHE
-		return "The migrated disk failed to load to the cache.";
-	case 0x80042448:	// VDS_E_INTERNAL_ERROR
-		return "VDS encountered an internal error.";
-	case 0x8004244A:	// VDS_E_PROVIDER_TYPE_NOT_SUPPORTED
-		return "The method call is not supported for the specified provider type.";
-	case 0x8004244B:	// VDS_E_DISK_NOT_ONLINE
-		return "One or more of the specified disks are not online.";
-	case 0x8004244C:	// VDS_E_DISK_IN_USE_BY_VOLUME
-		return "One or more extents of the disk are already being used by the volume.";
-	case 0x0004244D:	// VDS_S_IN_PROGRESS
-		return "The asynchronous operation is in progress.";
-	case 0x8004244E:	// VDS_E_ASYNC_OBJECT_FAILURE
-		return "Failure initializing the asynchronous object.";
-	case 0x8004244F:	// VDS_E_VOLUME_NOT_MOUNTED
-		return "The volume is not mounted.";
-	case 0x80042450:	// VDS_E_PACK_NOT_FOUND
-		return "The pack was not found.";
-	case 0x80042453:	// VDS_E_OBJECT_OUT_OF_SYNC
-		return "The reference to the object might be stale.";
-	case 0x80042454:	// VDS_E_MISSING_DISK
-		return "The specified disk could not be found.";
-	case 0x80042455:	// VDS_E_DISK_PNP_REG_CORRUPT
-		return "The provider's list of PnP registered disks has become corrupted.";
-	case 0x80042457:	// VDS_E_NO_DRIVELETTER_FLAG
-		return "The provider does not support the VDS_VF_NO DRIVELETTER volume flag.";
-	case 0x80042459:	// VDS_E_REVERT_ON_CLOSE_SET
-		return "Some volume flags are already set.";
-	case 0x0004245B:	// VDS_S_UNABLE_TO_GET_GPT_ATTRIBUTES
-		return "Unable to retrieve the GPT attributes for this volume.";
-	case 0x8004245C:	// VDS_E_VOLUME_TEMPORARILY_DISMOUNTED
-		return "The volume is already dismounted temporarily.";
-	case 0x8004245D:	// VDS_E_VOLUME_PERMANENTLY_DISMOUNTED
-		return "The volume is already permanently dismounted.";
-	case 0x8004245E:	// VDS_E_VOLUME_HAS_PATH
-		return "The volume cannot be dismounted permanently because it still has an access path.";
-	case 0x8004245F:	// VDS_E_TIMEOUT
-		return "The operation timed out.";
-	case 0x80042461:	// VDS_E_LDM_TIMEOUT
-		return "The operation timed out in the LDMA service. Retry the operation.";
-	case 0x80042462:	// VDS_E_REVERT_ON_CLOSE_MISMATCH
-		return "The flags to be cleared do not match the flags that were set previously.";
-	case 0x80042463:	// VDS_E_RETRY
-		return "The operation failed. Retry the operation.";
-	case 0x80042464:	// VDS_E_ONLINE_PACK_EXISTS
-		return "The operation failed, because an online pack object already exists.";
-	case 0x80042468:	// VDS_E_MAX_USABLE_MBR
-		return "Only the first 2TB are usable on large MBR disks.";
-	case 0x80042500:	// VDS_E_NO_SOFTWARE_PROVIDERS_LOADED
-		return "There are no software providers loaded.";
-	case 0x80042501:	// VDS_E_DISK_NOT_MISSING
-		return "The disk is not missing.";
-	case 0x80042502:	// VDS_E_NO_VOLUME_LAYOUT
-		return "The volume's layout could not be retrieved.";
-	case 0x80042503:	// VDS_E_CORRUPT_VOLUME_INFO
-		return "The volume's driver information is corrupted.";
-	case 0x80042504:	// VDS_E_INVALID_ENUMERATOR
-		return "The enumerator is corrupted";
-	case 0x80042505:	// VDS_E_DRIVER_INTERNAL_ERROR
-		return "An internal error occurred in the volume management driver.";
-	case 0x80042507:	// VDS_E_VOLUME_INVALID_NAME
-		return "The volume name is not valid.";
-	case 0x00042508:	// VDS_S_DISK_IS_MISSING
-		return "The disk is missing and not all information could be returned.";
-	case 0x80042509:	// VDS_E_CORRUPT_PARTITION_INFO
-		return "The disk's partition information is corrupted.";
-	case 0x0004250A:	// VDS_S_NONCONFORMANT_PARTITION_INFO
-		return "The disk's partition information does not conform to what is expected on a dynamic disk.";
-	case 0x8004250B:	// VDS_E_CORRUPT_EXTENT_INFO
-		return "The disk's extent information is corrupted.";
-	case 0x0004250E:	// VDS_S_SYSTEM_PARTITION
-		return "Warning: There was a failure while checking for the system partition.";
-	case 0x8004250F:	// VDS_E_BAD_PNP_MESSAGE
-		return "The PNP service sent a corrupted notification to the provider.";
-	case 0x80042510:	// VDS_E_NO_PNP_DISK_ARRIVE
-	case 0x80042511:	// VDS_E_NO_PNP_VOLUME_ARRIVE
-		return "No disk/volume arrival notification was received.";
-	case 0x80042512:	// VDS_E_NO_PNP_DISK_REMOVE
-	case 0x80042513:	// VDS_E_NO_PNP_VOLUME_REMOVE
-		return "No disk/volume removal notification was received.";
-	case 0x80042514:	// VDS_E_PROVIDER_EXITING
-		return "The provider is exiting.";
-	case 0x00042517:	// VDS_S_NO_NOTIFICATION
-		return "No volume arrival notification was received.";
-	case 0x80042519:	// VDS_E_INVALID_DISK
-		return "The specified disk is not valid.";
-	case 0x8004251A:	// VDS_E_INVALID_PACK
-		return "The specified disk pack is not valid.";
-	case 0x8004251B:	// VDS_E_VOLUME_ON_DISK
-		return "This operation is not allowed on disks with volumes.";
-	case 0x8004251C:	// VDS_E_DRIVER_INVALID_PARAM
-		return "The driver returned an invalid parameter error.";
-	case 0x8004253D:	// VDS_E_DRIVER_OBJECT_NOT_FOUND
-		return "The object was not found in the driver cache.";
-	case 0x8004253E:	// VDS_E_PARTITION_NOT_CYLINDER_ALIGNED
-		return "The disk layout contains partitions which are not cylinder aligned.";
-	case 0x8004253F:	// VDS_E_DISK_LAYOUT_PARTITIONS_TOO_SMALL
-		return "The disk layout contains partitions which are less than the minimum required size.";
-	case 0x80042540:	// VDS_E_DISK_IO_FAILING
-		return "The I/O to the disk is failing.";
-	case 0x80042543:	// VDS_E_GPT_ATTRIBUTES_INVALID
-		return "Invalid GPT attributes were specified.";
-	case 0x8004254D:	// VDS_E_UNEXPECTED_DISK_LAYOUT_CHANGE
-		return "An unexpected layout change occurred external to the volume manager.";
-	case 0x8004254E:	// VDS_E_INVALID_VOLUME_LENGTH
-		return "The volume length is invalid.";
-	case 0x8004254F:	// VDS_E_VOLUME_LENGTH_NOT_SECTOR_SIZE_MULTIPLE
-		return "The volume length is not a multiple of the sector size.";
-	case 0x80042550:	// VDS_E_VOLUME_NOT_RETAINED
-		return "The volume does not have a retained partition association.";
-	case 0x80042551:	// VDS_E_VOLUME_RETAINED
-		return "The volume already has a retained partition association.";
-	case 0x80042553:	// VDS_E_ALIGN_BEYOND_FIRST_CYLINDER
-		return "The specified alignment is beyond the first cylinder.";
-	case 0x80042554:	// VDS_E_ALIGN_NOT_SECTOR_SIZE_MULTIPLE
-		return "The specified alignment is not a multiple of the sector size.";
-	case 0x80042555:	// VDS_E_ALIGN_NOT_ZERO
-		return "The specified partition type cannot be created with a non-zero alignment.";
-	case 0x80042556:	// VDS_E_CACHE_CORRUPT
-		return "The service's cache has become corrupt.";
-	case 0x80042557:	// VDS_E_CANNOT_CLEAR_VOLUME_FLAG
-		return "The specified volume flag cannot be cleared.";
-	case 0x80042558:	// VDS_E_DISK_BEING_CLEANED
-		return "The operation is not allowed on a disk that is in the process of being cleaned.";
-	case 0x8004255A:	// VDS_E_DISK_REMOVEABLE
-		return "The operation is not supported on removable media.";
-	case 0x8004255B:	// VDS_E_DISK_REMOVEABLE_NOT_EMPTY
-		return "The operation is not supported on a non-empty removable disk.";
-	case 0x8004255C:	// VDS_E_DRIVE_LETTER_NOT_FREE
-		return "The specified drive letter is not free to be assigned.";
-	case 0x8004255E:	// VDS_E_INVALID_DRIVE_LETTER
-		return "The specified drive letter is not valid.";
-	case 0x8004255F:	// VDS_E_INVALID_DRIVE_LETTER_COUNT
-		return "The specified number of drive letters to retrieve is not valid.";
-	case 0x80042560:	// VDS_E_INVALID_FS_FLAG
-		return "The specified file system flag is not valid.";
-	case 0x80042561:	// VDS_E_INVALID_FS_TYPE
-		return "The specified file system is not valid.";
-	case 0x80042562:	// VDS_E_INVALID_OBJECT_TYPE
-		return "The specified object type is not valid.";
-	case 0x80042563:	// VDS_E_INVALID_PARTITION_LAYOUT
-		return "The specified partition layout is invalid.";
-	case 0x80042564:	// VDS_E_INVALID_PARTITION_STYLE
-		return "VDS only supports MBR or GPT partition style disks.";
-	case 0x80042565:	// VDS_E_INVALID_PARTITION_TYPE
-		return "The specified partition type is not valid for this operation.";
-	case 0x80042566:	// VDS_E_INVALID_PROVIDER_CLSID
-	case 0x80042567:	// VDS_E_INVALID_PROVIDER_ID
-	case 0x8004256A:	// VDS_E_INVALID_PROVIDER_VERSION_GUID
-		return "A NULL GUID was passed to the provider.";
-	case 0x80042568:	// VDS_E_INVALID_PROVIDER_NAME
-		return "The specified provider name is invalid.";
-	case 0x80042569:	// VDS_E_INVALID_PROVIDER_TYPE
-		return "The specified provider type is invalid.";
-	case 0x8004256B:	// VDS_E_INVALID_PROVIDER_VERSION_STRING
-		return "The specified provider version string is invalid.";
-	case 0x8004256C:	// VDS_E_INVALID_QUERY_PROVIDER_FLAG
-		return "The specified query provider flag is invalid.";
-	case 0x8004256D:	// VDS_E_INVALID_SERVICE_FLAG
-		return "The specified service flag is invalid.";
-	case 0x8004256E:	// VDS_E_INVALID_VOLUME_FLAG
-		return "The specified volume flag is invalid.";
-	case 0x8004256F:	// VDS_E_PARTITION_NOT_OEM
-		return "The operation is only supported on an OEM, ESP, or unknown partition.";
-	case 0x80042570:	// VDS_E_PARTITION_PROTECTED
-		return "Cannot delete a protected partition without the force protected parameter set.";
-	case 0x80042571:	// VDS_E_PARTITION_STYLE_MISMATCH
-		return "The specified partition style is not the same as the disk's partition style.";
-	case 0x80042572:	// VDS_E_PROVIDER_INTERNAL_ERROR
-		return "An internal error has occurred in the provider.";
-	case 0x80042575:	// VDS_E_UNRECOVERABLE_PROVIDER_ERROR
-		return "An unrecoverable error occurred in the provider.";
-	case 0x80042576:	// VDS_E_VOLUME_HIDDEN
-		return "Cannot assign a mount point to a hidden volume.";
-	case 0x00042577:	// VDS_S_DISMOUNT_FAILED
-	case 0x00042578:	// VDS_S_REMOUNT_FAILED
-		return "Failed to dismount/remount the volume after setting the volume flags.";
-	case 0x80042579:	// VDS_E_FLAG_ALREADY_SET
-		return "Cannot set the specified flag as revert-on-close because it is already set.";
-	case 0x8004257B:	// VDS_E_DISTINCT_VOLUME
-		return "The input volume id cannot be the id of the volume that is the target of the operation.";
-	case 0x00042583:	// VDS_S_FS_LOCK
-		return "Failed to obtain a file system lock.";
-	case 0x80042584:	// VDS_E_READONLY
-		return "The volume is read only.";
-	case 0x80042585:	// VDS_E_INVALID_VOLUME_TYPE
-		return "The volume type is invalid for this operation.";
-	case 0x80042588:	// VDS_E_VOLUME_MIRRORED
-		return "This operation is not supported on a mirrored volume.";
-	case 0x80042589:	// VDS_E_VOLUME_SIMPLE_SPANNED
-		return "The operation is only supported on simple or spanned volumes.";
-	case 0x8004258C:	// VDS_E_PARTITION_MSR
-	case 0x8004258D:	// VDS_E_PARTITION_LDM
-		return "The operation is not supported on this type of partitions.";
-	case 0x0004258E:	// VDS_S_WINPE_BOOTENTRY
-		return "The boot entries cannot be updated automatically on WinPE.";
-	case 0x8004258F:	// VDS_E_ALIGN_NOT_A_POWER_OF_TWO
-		return "The alignment is not a power of two.";
-	case 0x80042590:	// VDS_E_ALIGN_IS_ZERO
-		return "The alignment is zero.";
-	case 0x80042593:	// VDS_E_FS_NOT_DETERMINED
-		return "The default file system could not be determined.";
-	case 0x80042595:	// VDS_E_DISK_NOT_OFFLINE
-		return "This disk is already online.";
-	case 0x80042596:	// VDS_E_FAILED_TO_ONLINE_DISK
-		return "The online operation failed.";
-	case 0x80042597:	// VDS_E_FAILED_TO_OFFLINE_DISK
-		return "The offline operation failed.";
-	case 0x80042598:	// VDS_E_BAD_REVISION_NUMBER
-		return "The operation could not be completed because the specified revision number is not supported.";
-	case 0x00042700:	// VDS_S_NAME_TRUNCATED
-		return "The name was set successfully but had to be truncated.";
-	case 0x80042701:	// VDS_E_NAME_NOT_UNIQUE
-		return "The specified name is not unique.";
-	case 0x8004270F:	// VDS_E_NO_DISK_PATHNAME
-		return "The disk's path could not be retrieved. Some operations on the disk might fail.";
-	case 0x80042711:	// VDS_E_NO_VOLUME_PATHNAME
-		return "The path could not be retrieved for one or more volumes.";
-	case 0x80042712:	// VDS_E_PROVIDER_CACHE_OUTOFSYNC
-		return "The provider's cache is not in sync with the driver cache.";
-	case 0x80042713:	// VDS_E_NO_IMPORT_TARGET
-		return "No import target was set for the subsystem.";
-	case 0x00042714:	// VDS_S_ALREADY_EXISTS
-		return "The object already exists.";
-	case 0x00042715:	// VDS_S_PROPERTIES_INCOMPLETE
-		return "Some, but not all, of the properties were successfully retrieved.";
-	case 0x80042803:	// VDS_E_UNABLE_TO_FIND_BOOT_DISK
-		return "Volume disk extent information could not be retrieved for the boot volume.";
-	case 0x80042807:	// VDS_E_BOOT_DISK
-		return "Disk attributes cannot be changed on the boot disk.";
-	case 0x00042808:	// VDS_S_DISK_MOUNT_FAILED
-	case 0x00042809:	// VDS_S_DISK_DISMOUNT_FAILED
-		return "One or more of the volumes on the disk could not be mounted/dismounted.";
-	case 0x8004280A:	// VDS_E_DISK_IS_OFFLINE
-	case 0x8004280B:	// VDS_E_DISK_IS_READ_ONLY
-		return "The operation cannot be performed on a disk that is offline or read-only.";
-	case 0x8004280C:	// VDS_E_PAGEFILE_DISK
-	case 0x8004280D:	// VDS_E_HIBERNATION_FILE_DISK
-	case 0x8004280E:	// VDS_E_CRASHDUMP_DISK
-		return "The operation cannot be performed on a disk that contains a pagefile, hibernation or crashdump volume.";
-	case 0x8004280F:	// VDS_E_UNABLE_TO_FIND_SYSTEM_DISK
-		return "A system error occurred while retrieving the system disk information.";
-	case 0x80042810:	// VDS_E_INCORRECT_SYSTEM_VOLUME_EXTENT_INFO
-		return "Multiple disk extents reported for the system volume - system error.";
-	case 0x80042811:	// VDS_E_SYSTEM_DISK
-		return "Disk attributes cannot be changed on the current system disk or BIOS disk 0.";
-	case 0x80042823:	// VDS_E_SECTOR_SIZE_ERROR
-		return "The sector size MUST be non-zero, a power of 2, and less than the maximum sector size.";
-	case 0x80042907:	// VDS_E_SUBSYSTEM_ID_IS_NULL
-		return "The provider returned a NULL subsystem identification string.";
-	case 0x8004290C:	// VDS_E_REBOOT_REQUIRED
-		return "A reboot is required before any further operations are initiated.";
-	case 0x8004290D:	// VDS_E_VOLUME_GUID_PATHNAME_NOT_ALLOWED
-		return "Volume GUID pathnames are not valid input to this method.";
-	case 0x8004290E:	// VDS_E_BOOT_PAGEFILE_DRIVE_LETTER
-		return "Assigning or removing drive letters on the current boot or pagefile volume is not allowed.";
-	case 0x8004290F:	// VDS_E_DELETE_WITH_CRITICAL
-		return "Delete is not allowed on a critical volume.";
-	case 0x80042910:	// VDS_E_CLEAN_WITH_DATA
-	case 0x80042911:	// VDS_E_CLEAN_WITH_OEM
-		return "The FORCE parameter MUST be set to TRUE in order to clean a disk that contains a data or OEM volume.";
-	case 0x80042912:	// VDS_E_CLEAN_WITH_CRITICAL
-		return "Clean is not allowed on a critical disk.";
-	case 0x80042913:	// VDS_E_FORMAT_CRITICAL
-		return "Format is not allowed on a critical volume.";
-	case 0x80042914:	// VDS_E_NTFS_FORMAT_NOT_SUPPORTED
-	case 0x80042915:	// VDS_E_FAT32_FORMAT_NOT_SUPPORTED
-	case 0x80042916:	// VDS_E_FAT_FORMAT_NOT_SUPPORTED
-		return "The requested file system format is not supported on this volume.";
-	case 0x80042917:	// VDS_E_FORMAT_NOT_SUPPORTED
-		return "The volume is not formattable.";
-	case 0x80042918:	// VDS_E_COMPRESSION_NOT_SUPPORTED
-		return "The specified file system does not support compression.";
-	default:
-		return NULL;
-	}
-}
-
-static const char* GetVimError(DWORD error_code)
-{
-	switch (error_code) {
-	case 0xC1420127:
-		return "The specified image in the specified wim is already mounted for read and write access.";
-	default:
-		return NULL;
-	}
-}
-
-// Convert a windows error to human readable string
+// Convert a Windows error to human readable string
+// One really has to wonder why the hell FormatMessage() was designed not to
+// handle FORMAT_MESSAGE_FROM_HMODULE automatically according to the facility...
 const char *WindowsErrorString(void)
 {
 	static char err_string[256] = { 0 };
 
 	DWORD size, presize;
-	DWORD error_code, format_error;
+	DWORD error_code, _error_code, format_error;
+	HANDLE hModule = NULL;
 
 	error_code = GetLastError();
-	// Check for VDS error codes
-	if ((HRESULT_FACILITY(error_code) == FACILITY_ITF) && (GetVdsError(error_code) != NULL)) {
-		static_sprintf(err_string, "[0x%08lX] %s", error_code, GetVdsError(error_code));
-		return err_string;
-	}
-	if ((HRESULT_FACILITY(error_code) == FACILITY_WIM) && (GetVimError(error_code) != NULL)) {
-		static_sprintf(err_string, "[0x%08lX] %s", error_code, GetVimError(error_code));
-		return err_string;
+	_error_code = error_code;
+retry:
+	// Check for specific facility error codes
+	switch (HRESULT_FACILITY(_error_code)) {
+	case FACILITY_NULL:
+		// Special case for internet related errors, that don't actually have a facility
+		// set but still require a hModule into wininet to display the messages.
+		if ((_error_code >= INTERNET_ERROR_BASE) && (_error_code <= INTERNET_ERROR_LAST))
+			hModule = GetModuleHandleA("wininet.dll");
+		break;
+	case FACILITY_ITF:
+		hModule = GetModuleHandleA("vdsutil.dll");
+		break;
+	case FACILITY_WIM:
+		hModule = GetModuleHandleA("wimgapi.dll");
+		break;
+	default:
+		break;
 	}
 	static_sprintf(err_string, "[0x%08lX] ", error_code);
 	presize = (DWORD)strlen(err_string);
 
-	size = FormatMessageU(FORMAT_MESSAGE_FROM_SYSTEM|FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
-		HRESULT_CODE(error_code), MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US),
-		&err_string[presize], (DWORD)(sizeof(err_string)-strlen(err_string)), NULL);
+	// coverity[var_deref_model]
+	size = FormatMessageU(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS |
+		((hModule != NULL) ? FORMAT_MESSAGE_FROM_HMODULE : 0), hModule,
+		_error_code, MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US),
+		&err_string[presize], (DWORD)(sizeof(err_string) - strlen(err_string)), NULL);
 	if (size == 0) {
 		format_error = GetLastError();
-		if ((format_error) && (format_error != ERROR_MR_MID_NOT_FOUND) && (format_error != ERROR_MUI_FILE_NOT_LOADED))
-			static_sprintf(err_string, "Windows error code 0x%08lX (FormatMessage error code 0x%08lX)",
-				error_code, format_error);
-		else
-			static_sprintf(err_string, "Windows error code 0x%08lX", error_code);
+		switch (format_error) {
+		case ERROR_SUCCESS:
+			static_sprintf(err_string, "[0x%08lX] (No Windows Error String)", _error_code);
+			break;
+		case ERROR_MR_MID_NOT_FOUND:
+		case ERROR_MUI_FILE_NOT_FOUND:
+		case ERROR_MUI_FILE_NOT_LOADED:
+			// We might be trying with the wrong facility. Remove it and try again.
+			if (HRESULT_FACILITY(_error_code) != FACILITY_NULL) {
+				_error_code = HRESULT_CODE(_error_code);
+				goto retry;
+			}
+			static_sprintf(err_string, "[0x%08lX] (NB: This system was unable to provide an English error message)", error_code);
+			break;
+		default:
+			static_sprintf(err_string, "[0x%08lX] (FormatMessage error code 0x%08lX)", error_code, format_error);
+			break;
+		}
 	} else {
 		// Microsoft may suffix CRLF to error messages, which we need to remove...
 		assert(presize > 2);
@@ -683,12 +297,13 @@ const char *WindowsErrorString(void)
 	return err_string;
 }
 
-char* GuidToString(const GUID* guid)
+char* GuidToString(const GUID* guid, BOOL bDecorated)
 {
 	static char guid_string[MAX_GUID_STRING_LENGTH];
 
 	if (guid == NULL) return NULL;
-	sprintf(guid_string, "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+	sprintf(guid_string, bDecorated ? "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}" :
+		"%08X%04X%04X%02X%02X%02X%02X%02X%02X%02X%02X",
 		(uint32_t)guid->Data1, guid->Data2, guid->Data3,
 		guid->Data4[0], guid->Data4[1], guid->Data4[2], guid->Data4[3],
 		guid->Data4[4], guid->Data4[5], guid->Data4[6], guid->Data4[7]);
@@ -730,28 +345,28 @@ char* SizeToHumanReadable(uint64_t size, BOOL copy_to_log, BOOL fake_units)
 	double hr_size = (double)size;
 	double t;
 	uint16_t i_size;
-	char **_msg_table = copy_to_log?default_msg_table:msg_table;
-	const double divider = fake_units?1000.0:1024.0;
+	char **_msg_table = copy_to_log ? default_msg_table : msg_table;
+	const double divider = fake_units ? 1000.0 : 1024.0;
 
-	for (suffix=0; suffix<MAX_SIZE_SUFFIXES-1; suffix++) {
+	for (suffix = 0; suffix < MAX_SIZE_SUFFIXES - 1; suffix++) {
 		if (hr_size < divider)
 			break;
 		hr_size /= divider;
 	}
 	if (suffix == 0) {
-		static_sprintf(str_size, "%s%d%s %s", dir, (int)hr_size, dir, _msg_table[MSG_020-MSG_000]);
+		static_sprintf(str_size, "%s%d%s %s", dir, (int)hr_size, dir, _msg_table[MSG_020 - MSG_000]);
 	} else if (fake_units) {
 		if (hr_size < 8) {
-			static_sprintf(str_size, (fabs((hr_size*10.0)-(floor(hr_size + 0.5)*10.0)) < 0.5)?"%0.0f%s":"%0.1f%s",
-				hr_size, _msg_table[MSG_020+suffix-MSG_000]);
+			static_sprintf(str_size, (fabs((hr_size * 10.0) - (floor(hr_size + 0.5) * 10.0)) < 0.5) ?
+				"%0.0f%s":"%0.1f%s", hr_size, _msg_table[MSG_020 + suffix - MSG_000]);
 		} else {
 			t = (double)upo2((uint16_t)hr_size);
-			i_size = (uint16_t)((fabs(1.0f-(hr_size / t)) < 0.05f)?t:hr_size);
-			static_sprintf(str_size, "%s%d%s %s", dir, i_size, dir, _msg_table[MSG_020+suffix-MSG_000]);
+			i_size = (uint16_t)((fabs(1.0f - (hr_size / t)) < 0.05f) ? t : hr_size);
+			static_sprintf(str_size, "%s%d%s %s", dir, i_size, dir, _msg_table[MSG_020 + suffix - MSG_000]);
 		}
 	} else {
 		static_sprintf(str_size, (hr_size * 10.0 - (floor(hr_size) * 10.0)) < 0.5?
-			"%s%0.0f%s %s":"%s%0.1f%s %s", dir, hr_size, dir, _msg_table[MSG_020+suffix-MSG_000]);
+			"%s%0.0f%s %s":"%s%0.1f%s %s", dir, hr_size, dir, _msg_table[MSG_020 + suffix - MSG_000]);
 	}
 	return str_size;
 }
@@ -863,6 +478,66 @@ const char* StrError(DWORD error_code, BOOL use_default_locale)
 	return ret;
 }
 
+typedef struct
+{
+	LPCWSTR lpFileName;
+	DWORD dwDesiredAccess;
+	DWORD dwShareMode;
+	DWORD dwCreationDisposition;
+	DWORD dwFlagsAndAttributes;
+	HANDLE hFile;
+	DWORD dwError;
+} cfx_params_t;
+
+// Thread used by CreateFileWithTimeout() below
+DWORD WINAPI CreateFileWithTimeoutThread(void* params)
+{
+	cfx_params_t* cfx_params = (cfx_params_t*)params;
+	HANDLE hFile = CreateFileW(cfx_params->lpFileName, cfx_params->dwDesiredAccess,
+		cfx_params->dwShareMode, NULL, cfx_params->dwCreationDisposition,
+		cfx_params->dwFlagsAndAttributes, NULL);
+
+	cfx_params->dwError = (hFile == INVALID_HANDLE_VALUE) ? GetLastError() : NOERROR;
+	cfx_params->hFile = hFile;
+
+	return cfx_params->dwError;
+}
+
+// A UTF-8 CreateFile() with timeout
+HANDLE CreateFileWithTimeout(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode,
+	LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition,
+	DWORD dwFlagsAndAttributes, HANDLE hTemplateFile, DWORD dwTimeOut)
+{
+	HANDLE hThread;
+	wconvert(lpFileName);
+
+	cfx_params_t params = {
+		wlpFileName,
+		dwDesiredAccess,
+		dwShareMode,
+		dwCreationDisposition,
+		dwFlagsAndAttributes,
+		INVALID_HANDLE_VALUE,
+		ERROR_IO_PENDING,
+	};
+
+	hThread = CreateThread(NULL, 0, CreateFileWithTimeoutThread, &params, 0, NULL);
+	if (hThread != NULL) {
+		if (WaitForSingleObject(hThread, dwTimeOut) == WAIT_TIMEOUT) {
+			CancelSynchronousIo(hThread);
+			WaitForSingleObject(hThread, 30000);
+			params.dwError = WAIT_TIMEOUT;
+		}
+		CloseHandle(hThread);
+	} else {
+		params.dwError = GetLastError();
+	}
+
+	wfree(lpFileName);
+	SetLastError(params.dwError);
+	return params.hFile;
+}
+
 // A WriteFile() equivalent, with up to nNumRetries write attempts on error.
 BOOL WriteFileWithRetry(HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
 	LPDWORD lpNumberOfBytesWritten, DWORD nNumRetries)
@@ -900,19 +575,19 @@ BOOL WriteFileWithRetry(HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWr
 			uprintf("Wrote %d bytes but requested %d", *lpNumberOfBytesWritten, nNumberOfBytesToWrite);
 		} else {
 			uprintf("Write error %s", WindowsErrorString());
-			LastWriteError = ERROR_SEVERITY_ERROR|FAC(FACILITY_STORAGE)|GetLastError();
+			LastWriteError = RUFUS_ERROR(GetLastError());
 		}
 		// If we can't reposition for the next run, just abort
 		if (!readFilePointer)
 			break;
 		if (nTry < nNumRetries) {
 			uprintf("Retrying in %d seconds...", WRITE_TIMEOUT / 1000);
-			// Don't sit idly but use the downtime to check for conflicting processes...
-			Sleep(CheckDriveAccess(WRITE_TIMEOUT, FALSE));
+			// TODO: Call GetProcessSearch() here?
+			Sleep(WRITE_TIMEOUT);
 		}
 	}
 	if (SCODE_CODE(GetLastError()) == ERROR_SUCCESS)
-		SetLastError(ERROR_SEVERITY_ERROR|FAC(FACILITY_STORAGE)|ERROR_WRITE_FAULT);
+		SetLastError(RUFUS_ERROR(ERROR_WRITE_FAULT));
 	return FALSE;
 }
 
@@ -953,7 +628,7 @@ DWORD WaitForSingleObjectWithMessages(HANDLE hHandle, DWORD dwMilliseconds)
 }
 
 #define STATUS_SUCCESS					((NTSTATUS)0x00000000L)
-#define STATUS_NOT_IMPLEMENTED			((NTSTATUS)0xC0000002L)
+#define STATUS_PROCEDURE_NOT_FOUND		((NTSTATUS)0xC000007AL)
 #define FILE_ATTRIBUTE_VALID_FLAGS		0x00007FB7
 #define NtCurrentPeb()					(NtCurrentTeb()->ProcessEnvironmentBlock)
 #define RtlGetProcessHeap()				(NtCurrentPeb()->Reserved4[1]) // NtCurrentPeb()->ProcessHeap, mangled due to deficiencies in winternl.h
@@ -1082,4 +757,229 @@ HANDLE CreatePreallocatedFile(const char* lpFileName, DWORD dwDesiredAccess,
 	pfRtlSetLastWin32ErrorAndNtStatusFromNtStatus(status);
 
 	return fileHandle;
+}
+
+// The following calls are used to resolve the addresses of DLL function calls
+// that are not publicly exposed by Microsoft. This is accomplished by downloading
+// the relevant .pdb and looking up the relevant address there. Once an address is
+// found, it is stored in the Rufus settings so that it can be reused.
+
+PF_TYPE_DECL(WINAPI, BOOL, SymInitialize, (HANDLE, PCSTR, BOOL));
+PF_TYPE_DECL(WINAPI, DWORD64, SymLoadModuleEx, (HANDLE, HANDLE, PCSTR, PCSTR, DWORD64, DWORD, PMODLOAD_DATA, DWORD));
+PF_TYPE_DECL(WINAPI, BOOL, SymUnloadModule64, (HANDLE, DWORD64));
+PF_TYPE_DECL(WINAPI, BOOL, SymEnumSymbols, (HANDLE, ULONG64, PCSTR, PSYM_ENUMERATESYMBOLS_CALLBACK, PVOID));
+PF_TYPE_DECL(WINAPI, BOOL, SymCleanup, (HANDLE));
+
+BOOL CALLBACK EnumSymProc(PSYMBOL_INFO pSymInfo, ULONG SymbolSize, PVOID UserContext)
+{
+	dll_resolver_t* resolver = (dll_resolver_t*)UserContext;
+	uint32_t i;
+
+	for (i = 0; i < resolver->count; i++) {
+		if (safe_strcmp(pSymInfo->Name, resolver->name[i]) == 0) {
+			resolver->address[i] = (uint32_t)pSymInfo->Address;
+#if defined(_DEBUG)
+			uprintf("%08x: %s", resolver->address[i], resolver->name[i]);
+#endif
+		}
+	}
+
+	return TRUE;
+}
+
+uint32_t ResolveDllAddress(dll_resolver_t* resolver)
+{
+	uint32_t r = 0;
+	uint32_t i;
+	debug_info_t* info = NULL;
+	char url[MAX_PATH], saved_id[MAX_PATH], path[MAX_PATH];
+	uint8_t* buf = NULL;
+	DWORD* dbuf;
+	DWORD64 base_address = 0ULL;
+
+	PF_INIT(SymInitialize, DbgHelp);
+	PF_INIT(SymLoadModuleEx, DbgHelp);
+	PF_INIT(SymUnloadModule64, DbgHelp);
+	PF_INIT(SymEnumSymbols, DbgHelp);
+	PF_INIT(SymCleanup, DbgHelp);
+
+	if (pfSymInitialize == NULL || pfSymLoadModuleEx == NULL || pfSymUnloadModule64 == NULL ||
+		pfSymEnumSymbols == NULL || pfSymCleanup == NULL || resolver->count == 0 ||
+		resolver->path == NULL || resolver->name == NULL || resolver->address == NULL)
+		return 0;
+
+	// Get the PDB unique address from the DLL. Note that we can *NOT* use SymGetModuleInfo64() to
+	// obtain the data we need because Microsoft either *BOTCHED* or *DELIBERATELY CRIPPLED* their
+	// SymLoadModuleEx()/SymLoadModule64() implementation on ARM64, so that the return value is always
+	// 0 with GetLastError() set to ERROR_SUCCESS, thereby *FALSELY* indicating that the module is
+	// already loaded... So we just load the whole DLL into a buffer and look for an "RSDS" section
+	// per https://www.godevtool.com/Other/pdb.htm
+	r = read_file(resolver->path, &buf);
+	if (r == 0)
+		return 0;
+
+	dbuf = (DWORD*)buf;
+	for (i = 0; i < (r - sizeof(debug_info_t)) / sizeof(DWORD); i++) {
+		if (dbuf[i] == RSDS_SIG) {
+			info = (debug_info_t*)&dbuf[i];
+			if (safe_strstr(info->PdbName, ".pdb") != NULL)
+				break;
+		}
+	}
+	if (info == NULL) {
+		uprintf("Could not find debug info in '%s'", resolver->path);
+		goto out;
+	}
+
+	// Check settings to see if we have existing data for these DLL calls.
+	for (i = 0; i < resolver->count; i++) {
+		static_sprintf(saved_id, "%s@%s%x:%s", _filenameU(resolver->path),
+			GuidToString(&info->Guid, FALSE), (int)info->Age, resolver->name[i]);
+		resolver->address[i] = ReadSetting32(saved_id);
+		if (resolver->address[i] == 0)
+			break;
+	}
+
+	if (i == resolver->count) {
+		// No need to download the PDB
+		r = resolver->count;
+		goto out;
+	}
+
+	// Download the PDB from Microsoft's symbol servers
+	if (MessageBoxExU(hMainDialog, lmprintf(MSG_345), lmprintf(MSG_115),
+		MB_YESNO | MB_ICONWARNING | MB_IS_RTL, selected_langid) != IDYES)
+		goto out;
+	static_sprintf(path, "%s\\%s", temp_dir, info->PdbName);
+	static_sprintf(url, "http://msdl.microsoft.com/download/symbols/%s/%s%x/%s",
+		info->PdbName, GuidToString(&info->Guid, FALSE), (int)info->Age, info->PdbName);
+	if (DownloadToFileOrBufferEx(url, path, SYMBOL_SERVER_USER_AGENT, NULL, hMainDialog, FALSE) < 200 * KB)
+		goto out;
+
+	if (!pfSymInitialize(hRufus, NULL, FALSE)) {
+		uprintf("Could not initialize DLL symbol handler");
+		goto out;
+	}
+
+	// NB: SymLoadModuleEx() does not load a PDB unless the file has an explicit '.pdb' extension
+	base_address = pfSymLoadModuleEx(hRufus, NULL, path, NULL, DEFAULT_BASE_ADDRESS, 0, NULL, 0);
+	if_not_assert(base_address == DEFAULT_BASE_ADDRESS)
+		goto out;
+	// On Windows 11 ARM64 the following call will return *TWO* different addresses for the same
+	// call, because most Windows DLL's are ARM64X, which means that they are an unholy union of
+	// both X64 and ARM64 code in the same binary...
+	// See https://learn.microsoft.com/en-us/windows/arm/arm64x-pe
+	// Now this would be all swell and dandy if Microsoft's debugging/symbol APIs had followed
+	// and would give us a hint of the architecture behind each duplicate address, but of course,
+	// the SYMBOL_INFO passed to EnumSymProc contains no such data. So we currently don't have a
+	// way to tell which of the two addresses we get on ARM64 is for which architecture... :(
+	pfSymEnumSymbols(hRufus, base_address, "*!*", EnumSymProc, resolver);
+	DeleteFileU(path);
+
+	// Store the addresses
+	r = 0;
+	for (i = 0; i < resolver->count; i++) {
+		static_sprintf(saved_id, "%s@%s%x:%s", _filenameU(resolver->path),
+			GuidToString(&info->Guid, FALSE), (int)info->Age, resolver->name[i]);
+		if (resolver->address[i] != 0) {
+			WriteSetting32(saved_id, resolver->address[i]);
+			r++;
+		}
+	}
+
+out:
+	free(buf);
+	if (base_address != 0)
+		pfSymUnloadModule64(hRufus, base_address);
+	pfSymCleanup(hRufus);
+	return r;
+}
+
+static void print_extracted_file(const char* file_path, uint64_t file_length)
+{
+	char str[MAX_PATH];
+
+	if (file_path == NULL)
+		return;
+	static_sprintf(str, "%s (%s)", file_path, SizeToHumanReadable(file_length, TRUE, FALSE));
+	uprintf("Extracting: %s", str);
+	PrintStatus(0, MSG_000, str);	// MSG_000 is "%s"
+}
+
+static void update_progress(const uint64_t processed_bytes)
+{
+	UpdateProgressWithInfo(OP_EXTRACT_ZIP, MSG_348, processed_bytes, archive_size);
+}
+
+// Extract content from a zip archive onto the designated directory or drive
+BOOL ExtractZip(const char* src_zip, const char* dest_dir)
+{
+	int64_t extracted_bytes = 0;
+
+	if (src_zip == NULL)
+		return FALSE;
+	archive_size = _filesizeU(src_zip);
+	if (bled_init(256 * KB, NULL, NULL, NULL, update_progress, print_extracted_file, &ErrorStatus) != 0)
+		return FALSE;
+	uprintf("● Copying files from '%s'", src_zip);
+	extracted_bytes = bled_uncompress_to_dir(src_zip, dest_dir, BLED_COMPRESSION_ZIP);
+	bled_exit();
+	return (extracted_bytes > 0);
+}
+
+// Returns a list of all the files or folders from a directory
+DWORD ListDirectoryContent(StrArray* arr, char* dir, uint8_t type)
+{
+	WIN32_FIND_DATAA FindFileData = { 0 };
+	HANDLE hFind;
+	DWORD dwError, dwResult;
+	char mask[MAX_PATH + 1], path[MAX_PATH + 1];
+
+	if (arr == NULL || dir == NULL || (type & 0x03) == 0)
+		return ERROR_INVALID_PARAMETER;
+
+	if (PathCombineU(mask, dir, "*") == NULL)
+		return GetLastError();
+
+	hFind = FindFirstFileU(mask, &FindFileData);
+	if (hFind == INVALID_HANDLE_VALUE)
+		return GetLastError();
+
+	dwResult = ERROR_FILE_NOT_FOUND;
+	do {
+		if (FindFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+			if (strcmp(FindFileData.cFileName, ".") == 0 ||
+				strcmp(FindFileData.cFileName, "..") == 0 ||
+				(type & LIST_DIR_TYPE_RECURSIVE) == 0)
+				continue;
+			if (PathCombineU(path, dir, FindFileData.cFileName) == NULL)
+				break;
+			// Append a trailing backslash to directories
+			if (path[strlen(path) - 1] != '\\') {
+				path[strlen(path) + 1] = '\0';
+				path[strlen(path)] = '\\';
+			}
+			if (type & LIST_DIR_TYPE_DIRECTORY)
+				StrArrayAdd(arr, path, TRUE);
+			dwError = ListDirectoryContent(arr, path, type);
+			if (dwError != NO_ERROR && dwError != ERROR_FILE_NOT_FOUND) {
+				SetLastError(dwError);
+				break;
+			}
+		} else {
+			if (type & LIST_DIR_TYPE_FILE) {
+				if (PathCombineU(path, dir, FindFileData.cFileName) == NULL)
+					break;
+				StrArrayAdd(arr, path, TRUE);
+			}
+			dwResult = NO_ERROR;
+		}
+	} while (FindNextFileU(hFind, &FindFileData));
+
+	dwError = GetLastError();
+	FindClose(hFind);
+
+	if (dwError != ERROR_NO_MORE_FILES)
+		return dwError;
+	return dwResult;
 }

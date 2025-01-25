@@ -1,7 +1,7 @@
 /*
  * Rufus: The Reliable USB Formatting Utility
  * Virtual Disk Handling definitions and prototypes
- * Copyright © 2022 Pete Batard <pete@akeo.ie>
+ * Copyright © 2022-2024 Pete Batard <pete@akeo.ie>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,25 +19,15 @@
 
 #include <stdint.h>
 #include <windows.h>
+// Temporary workaround for MinGW32 delay-loading
+// See https://github.com/pbatard/rufus/pull/2513
+#if defined(__MINGW32__)
+#undef DECLSPEC_IMPORT
+#define DECLSPEC_IMPORT __attribute__((visibility("hidden")))
+#endif
+#include <virtdisk.h>
 
 #pragma once
-
-#define VHD_FOOTER_COOKIE					{ 'c', 'o', 'n', 'e', 'c', 't', 'i', 'x' }
-
-#define VHD_FOOTER_FEATURES_NONE			0x00000000
-#define VHD_FOOTER_FEATURES_TEMPORARY		0x00000001
-#define VHD_FOOTER_FEATURES_RESERVED		0x00000002
-
-#define VHD_FOOTER_FILE_FORMAT_V1_0			0x00010000
-
-#define VHD_FOOTER_DATA_OFFSET_FIXED_DISK	0xFFFFFFFFFFFFFFFFULL
-
-#define VHD_FOOTER_CREATOR_HOST_OS_WINDOWS	{ 'W', 'i', '2', 'k' }
-#define VHD_FOOTER_CREATOR_HOST_OS_MAC		{ 'M', 'a', 'c', ' ' }
-
-#define VHD_FOOTER_TYPE_FIXED_HARD_DISK		0x00000002
-#define VHD_FOOTER_TYPE_DYNAMIC_HARD_DISK	0x00000003
-#define VHD_FOOTER_TYPE_DIFFER_HARD_DISK	0x00000004
 
 #define WIM_MAGIC							0x0000004D4957534DULL	// "MSWIM\0\0\0"
 #define WIM_HAS_API_EXTRACT					1
@@ -70,6 +60,48 @@
 
 #define MBR_SIZE							512	// Might need to review this once we see bootable 4k systems
 
+#define VIRTUAL_STORAGE_TYPE_DEVICE_FFU                    99
+#define CREATE_VIRTUAL_DISK_VERSION_2                       2
+#define CREATE_VIRTUAL_DISK_FLAG_CREATE_BACKING_STORAGE     8
+
+#ifndef CREATE_VIRTUAL_DISK_PARAMETERS_DEFAULT_BLOCK_SIZE
+#define CREATE_VIRTUAL_DISK_PARAMETERS_DEFAULT_BLOCK_SIZE   0
+#endif
+
+#ifndef CREATE_VIRTUAL_DISK_PARAMETERS_DEFAULT_SECTOR_SIZE
+#define CREATE_VIRTUAL_DISK_PARAMETERS_DEFAULT_SECTOR_SIZE  0
+#endif
+
+typedef struct
+{
+	CREATE_VIRTUAL_DISK_VERSION Version;
+	union
+	{
+		struct
+		{
+			GUID                  UniqueId;
+			ULONGLONG             MaximumSize;
+			ULONG                 BlockSizeInBytes;
+			ULONG                 SectorSizeInBytes;
+			PCWSTR                ParentPath;
+			PCWSTR                SourcePath;
+		} Version1;
+		struct
+		{
+			GUID                   UniqueId;
+			ULONGLONG              MaximumSize;
+			ULONG                  BlockSizeInBytes;
+			ULONG                  SectorSizeInBytes;
+			ULONG                  PhysicalSectorSizeInBytes;
+			PCWSTR                 ParentPath;
+			PCWSTR                 SourcePath;
+			OPEN_VIRTUAL_DISK_FLAG OpenFlags;
+			VIRTUAL_STORAGE_TYPE   ParentVirtualStorageType;
+			VIRTUAL_STORAGE_TYPE   SourceVirtualStorageType;
+			GUID                   ResiliencyGuid;
+		} Version2;
+	};
+} STOPGAP_CREATE_VIRTUAL_DISK_PARAMETERS;
 
 // From https://docs.microsoft.com/en-us/previous-versions/msdn10/dd834960(v=msdn.10)
 // as well as https://msfn.org/board/topic/150700-wimgapi-wimmountimage-progressbar/
@@ -95,40 +127,6 @@ enum WIMMessage {
 	WIM_MSG_ABORT_IMAGE = -1
 };
 
-/*
- * VHD Fixed HD footer (Big Endian)
- * http://download.microsoft.com/download/f/f/e/ffef50a5-07dd-4cf8-aaa3-442c0673a029/Virtual%20Hard%20Disk%20Format%20Spec_10_18_06.doc
- * NB: If a dymamic implementation is needed, check the GPL v3 compatible C++ implementation from:
- * https://sourceforge.net/p/urbackup/backend/ci/master/tree/fsimageplugin/
- */
-#pragma pack(push, 1)
-typedef struct vhd_footer {
-	char		cookie[8];
-	uint32_t	features;
-	uint32_t	file_format_version;
-	uint64_t	data_offset;
-	uint32_t	timestamp;
-	char		creator_app[4];
-	uint32_t	creator_version;
-	char		creator_host_os[4];
-	uint64_t	original_size;
-	uint64_t	current_size;
-	union {
-		uint32_t	geometry;
-		struct {
-			uint16_t	cylinders;
-			uint8_t		heads;
-			uint8_t		sectors;
-		} chs;
-	} disk_geometry;
-	uint32_t	disk_type;
-	uint32_t	checksum;
-	uuid_t		unique_id;
-	uint8_t		saved_state;
-	uint8_t		reserved[427];
-} vhd_footer;
-#pragma pack(pop)
-
 extern uint8_t WimExtractCheck(BOOL bSilent);
 extern BOOL WimExtractFile(const char* wim_image, int index, const char* src, const char* dst, BOOL bSilent);
 extern BOOL WimExtractFile_API(const char* image, int index, const char* src, const char* dst, BOOL bSilent);
@@ -136,7 +134,11 @@ extern BOOL WimExtractFile_7z(const char* image, int index, const char* src, con
 extern BOOL WimApplyImage(const char* image, int index, const char* dst);
 extern char* WimMountImage(const char* image, int index);
 extern BOOL WimUnmountImage(const char* image, int index, BOOL commit);
-extern char* GetExistingMountPoint(const char* image, int index);
+extern char* WimGetExistingMountPoint(const char* image, int index);
 extern BOOL WimIsValidIndex(const char* image, int index);
 extern int8_t IsBootableImage(const char* path);
-extern BOOL AppendVHDFooter(const char* vhd_path);
+extern char* VhdMountImageAndGetSize(const char* path, uint64_t* disksize);
+#define VhdMountImage(path) VhdMountImageAndGetSize(path, NULL)
+extern void VhdUnmountImage(void);
+extern void VhdSaveImage(void);
+extern void IsoSaveImage(void);

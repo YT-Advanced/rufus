@@ -5,7 +5,28 @@ To edit a translation, please make sure to follow:
 https://github.com/pbatard/rufus/wiki/Localization#Editing_an_existing_translation
 Or simply download https://files.akeo.ie/pollock/pollock-1.5.exe and follow its directions.
 
-o v3.22 (2023.??.??)
+o v4.? (????.??.??) ** NOT FINAL!!! PLEASE DO NOT SEND UNSOLICITED TRANSLATIONS! **
+  - *NEW*      MSG_350 "Use 'Windows UEFI CA 2023' signed bootloaders [EXPERIMENTAL]"
+  - *NEW*      MSG_351 "Checking for UEFI bootloader revocation..."
+
+o v4.5 (2024.05.??)
+  - *UPDATED*  IDC_RUFUS_MBR -> IDC_UEFI_MEDIA_VALIDATION "Enable runtime UEFI media validation"
+  - *UPDATED*  MSG_167 "Install a UEFI bootloader, that will perform MD5Sum file validation of the media"
+  - *NEW*      MSG_337 "An additional file ('diskcopy.dll') must be downloaded from Microsoft to install MS-DOS (...)"
+  - *NEW*      MSG_338 "Revoked UEFI bootloader detected"
+  - *NEW*      MSG_339 "Rufus detected that the ISO you have selected contains a UEFI bootloader that has been revoked (...)"
+  - *NEW*      MSG_340 "a \"Security Violation\" screen"
+  - *NEW*      MSG_341 "a Windows Recovery Screen (BSOD) with '%s'"
+  - *NEW       MSG_342 "Compressed VHDX Image"
+  - *NEW*      MSG_343 "Uncompressed VHD Image"
+  - *NEW*      MSG_344 "Full Flash Update Image"
+  - *NEW*      MSG_345 "Some additional data must be downloaded from Microsoft to use this functionality (...)"
+  - *NEW*      MSG_346 "Restrict Windows to S-Mode (INCOMPATIBLE with online account bypass)"
+  - *NEW*      MSG_347 "Expert Mode"
+  - *NEW*      MSG_348 "Extracting archive files: %s"
+  - *NEW*      MSG_349 "Use Rufus MBR"
+
+o v3.22 (2023.03.25)
   // MSG_144 is aimed the the ISO download feature
   - *UPDATED*  MSG_144 "Temporarily banned by Microsoft for requesting too many downloads (...)" -> "Download of Windows ISOs is unavailable due to Microsoft having altered their website to prevent it."
   // MSG_199 will appear for the ISO download feature if running on Windows 7 

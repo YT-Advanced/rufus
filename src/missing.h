@@ -1,7 +1,7 @@
 /*
 * Rufus: The Reliable USB Formatting Utility
 * Constants and defines missing from various toolchains
-* Copyright © 2016-2022 Pete Batard <pete@akeo.ie>
+* Copyright © 2016-2024 Pete Batard <pete@akeo.ie>
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -18,24 +18,22 @@
 */
 
 #include <windows.h>
+#include <intrin.h>
 
 #pragma once
-
-/* Convenient to have around */
-#define KB                   1024LL
-#define MB                1048576LL
-#define GB             1073741824LL
-#define TB          1099511627776LL
 
 #ifndef MIN
 #define MIN(a,b) (((a) < (b)) ? (a) : (b))
 #endif
 
-#if defined(__GNUC__)
-#define ALIGNED(m) __attribute__ ((__aligned__(m)))
-#elif defined(_MSC_VER)
-#define ALIGNED(m) __declspec(align(m))
+#ifndef MAX
+#define MAX(a,b) (((a) > (b)) ? (a) : (b))
 #endif
+
+#define LO_ALIGN_X_TO_Y(x, y) (((x) / (y)) * (y))
+#define HI_ALIGN_X_TO_Y(x, y) ((((x) + (y) - 1) / (y)) * (y))
+
+#define IS_HEXASCII(c) (((c) >= '0' && (c) <= '9') || ((c) >= 'A' && (c) <= 'F') || ((c) >= 'a' && (c) <= 'f'))
 
 /*
  * Prefetch 64 bytes at address m, for read-only operation
@@ -43,10 +41,10 @@
  * line has already been fetched, or if the address is invalid.
  */
 #if defined(__GNUC__) || defined(__clang__)
-#define PREFETCH64(m) do { __builtin_prefetch(m, 0, 0); __builtin_prefetch(m+32, 0, 0); } while(0)
+#define PREFETCH64(m) do { __builtin_prefetch((m), 0, 0); __builtin_prefetch((m) + 32, 0, 0); } while(0)
 #elif defined(_MSC_VER)
 #if defined(_M_IX86) || defined (_M_X64)
-#define PREFETCH64(m) do { _m_prefetch(m); _m_prefetch(m+32); } while(0)
+#define PREFETCH64(m) do { _m_prefetch((void*)(m)); _m_prefetch((void*)((m) + 32)); } while(0)
 #else
 // _m_prefetch() doesn't seem to exist for MSVC/ARM
 #define PREFETCH64(m)
@@ -184,10 +182,6 @@ static __inline uint16_t remap16(uint16_t src, uint16_t* map, const BOOL reverse
 #ifndef ERROR_OFFSET_ALIGNMENT_VIOLATION
 #define ERROR_OFFSET_ALIGNMENT_VIOLATION        327
 #endif
-
-/* The following is used for native ISO mounting in Windows 8 or later */
-#define VIRTUAL_STORAGE_TYPE_VENDOR_MICROSOFT \
-	{ 0xEC984AECL, 0xA0F9, 0x47e9, { 0x90, 0x1F, 0x71, 0x41, 0x5A, 0x66, 0x34, 0x5B } }
 
 /* RISC-V is still bleeding edge */
 #ifndef IMAGE_FILE_MACHINE_RISCV32

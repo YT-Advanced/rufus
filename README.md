@@ -17,18 +17,19 @@ Features
 --------
 
 * Format USB, flash card and virtual drives to FAT/FAT32/NTFS/UDF/exFAT/ReFS/ext2/ext3
-* Create DOS bootable USB drives, using [FreeDOS](https://www.freedos.org) or MS-DOS (Windows 8.1 or earlier)
+* Create DOS bootable USB drives using [FreeDOS](https://www.freedos.org) or MS-DOS
 * Create BIOS or UEFI bootable drives, including [UEFI bootable NTFS](https://github.com/pbatard/uefi-ntfs)
 * Create bootable drives from bootable ISOs (Windows, Linux, etc.)
 * Create bootable drives from bootable disk images, including compressed ones
 * Create Windows 11 installation drives for PCs that don't have TPM or Secure Boot
 * Create [Windows To Go](https://en.wikipedia.org/wiki/Windows_To_Go) drives
+* Create VHD/DD, VHDX and FFU images of an existing drive
 * Create persistent Linux partitions
-* Create VHD/DD images of a drive
 * Compute MD5, SHA-1, SHA-256 and SHA-512 checksums of the selected image
+* Perform runtime validation of UEFI bootable media
 * Improve Windows installation experience by automatically setting up OOBE parameters (local account, privacy options, etc.)
 * Perform bad blocks checks, including detection of "fake" flash drives
-* Download official Microsoft Windows 7, Windows 8, Windows 10 or Windows 11 retail ISOs
+* Download official Microsoft Windows 8, Windows 10 or Windows 11 retail ISOs
 * Download [UEFI Shell](https://github.com/pbatard/UEFI-Shell) ISOs
 * Modern and familiar UI, with [38 languages natively supported](https://github.com/pbatard/rufus/wiki/FAQ#What_languages_are_natively_supported_by_Rufus)
 * Small footprint. No installation required.

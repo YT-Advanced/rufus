@@ -4,7 +4,7 @@
  * Copyright 1992-1994 Remy Card <card@masi.ibp.fr>
  * Copyright 1995-1999 Theodore Ts'o
  * Copyright 1999 David Beattie
- * Copyright 2011-2019 Pete Batard <pete@akeo.ie>
+ * Copyright 2011-2024 Pete Batard <pete@akeo.ie>
  *
  * This file is based on the minix file system programs fsck and mkfs
  * written and copyrighted by Linus Torvalds <Linus.Torvalds@cs.helsinki.fi>
@@ -318,7 +318,7 @@ static void CALLBACK alarm_intr(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dw
 {
 	if (!num_blocks)
 		return;
-	if (FormatStatus) {
+	if (ErrorStatus) {
 		uprintf("%sInterrupting at block %" PRIu64 "\n", bb_prefix,
 			(unsigned long long) currently_testing);
 		cancel_ops = -1;
@@ -377,7 +377,7 @@ static int64_t do_read (HANDLE hDrive, unsigned char * buffer, uint64_t tryout,
 	if (got < 0)
 		got = 0;
 	if (got & 511)
-		uprintf("%sWeird value (%ld) in do_read\n", bb_prefix, got);
+		uprintf("%sWeird value (%lld) in do_read\n", bb_prefix, got);
 	got /= block_size;
 	return got;
 }
@@ -399,7 +399,7 @@ static int64_t do_write(HANDLE hDrive, unsigned char * buffer, uint64_t tryout,
 	if (got < 0)
 		got = 0;
 	if (got & 511)
-		uprintf("%sWeird value (%ld) in do_write\n", bb_prefix, got);
+		uprintf("%sWeird value (%lld) in do_write\n", bb_prefix, got);
 	got /= block_size;
 	return got;
 }
@@ -426,6 +426,11 @@ static unsigned int test_rw(HANDLE hDrive, blk64_t last_block, size_t block_size
 		cancel_ops = -1;
 		return 0;
 	}
+	if ((first_block * block_size > 1 * PB) || (last_block * block_size > 1 * PB)) {
+		uprintf("%sDisk is too large\n", bb_prefix);
+		cancel_ops = -1;
+		return 0;
+	}
 
 	buffer = allocate_buffer(2 * blocks_at_once * block_size);
 	if (!buffer) {
@@ -447,7 +452,7 @@ static unsigned int test_rw(HANDLE hDrive, blk64_t last_block, size_t block_size
 		if (detect_fakes && (pat_idx == 0)) {
 			srand((unsigned int)GetTickCount64());
 			id_offset = rand() * (block_size - sizeof(blk64_t)) / RAND_MAX;
-			uprintf("%sUsing offset %d for fake device check\n", bb_prefix, id_offset);
+			uprintf("%sUsing offset %zu for fake device check\n", bb_prefix, id_offset);
 		}
 		// coverity[dont_call]
 		pattern_fill(buffer, pattern[pattern_type][pat_idx], blocks_at_once * block_size);
@@ -543,8 +548,12 @@ static unsigned int test_rw(HANDLE hDrive, blk64_t last_block, size_t block_size
 			for (i=0; i < got; i++) {
 				if (memcmp(read_buffer + i * block_size,
 					   buffer + i * block_size,
-					   block_size))
+					   block_size)) {
+					if_not_assert(currently_testing * block_size < 1 * PB) 
+						goto out;
+					// coverity[overflow_const]
 					bb_count += bb_output(currently_testing+i-got, CORRUPTION_ERROR);
+				}
 			}
 			if (v_flag > 1)
 				print_status();

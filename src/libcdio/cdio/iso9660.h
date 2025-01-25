@@ -1,5 +1,5 @@
 /*
-    Copyright (C) 2003-2008, 2012-2013, 2017
+    Copyright (C) 2003-2008, 2012-2013, 2017, 2023-2024
                   Rocky Bernstein <rocky@gnu.org>
     Copyright (C) 2000 Herbert Valerio Riedel <hvr@gnu.org>
 
@@ -27,7 +27,7 @@
  * filesystem library; applications include this.
  *
  * See also the ISO-9660 specification. The freely available European
- * equivalant standard is called ECMA-119.
+ * equivalent standard is called ECMA-119.
 */
 
 
@@ -78,7 +78,7 @@ typedef char     dchar_t;  /*! See section 7.4.1 */
     program; things are done this way so that in a debugger one can to
     refer to the enumeration value names such as in a debugger
     expression and get something. With the more common a \#define
-    mechanism, the name/value assocation is lost at run time.
+    mechanism, the name/value association is lost at run time.
   */
 extern enum iso_enum1_s {
   ISO_PVD_SECTOR      =   16, /**< Sector of Primary Volume Descriptor. */
@@ -93,8 +93,9 @@ extern enum iso_enum1_s {
                                  preparer id. */
   MAX_ISOPATHNAME     =  255, /**< Maximum number of characters in the
                                  entire ISO 9660 filename. */
-  ISO_BLOCKSIZE       = 2048  /**< Number of bytes in an ISO 9660 block. */
-
+  ISO_BLOCKSIZE       = 2048, /**< Number of bytes in an ISO 9660 block. */
+  VIRTUAL_SECTORSIZE  =  512  /**< Number of bytes in an El Torito virtual
+                                   image sector */
 } iso_enums1;
 
 /*! An enumeration for some of the ISO_* \#defines below. This isn't
@@ -162,6 +163,7 @@ extern enum iso_vd_enum_s {
 extern const char ISO_STANDARD_ID[sizeof("CD001")-1];
 
 #define ISO_STANDARD_ID      "CD001"
+#define EL_TORITO_ID         "EL TORITO SPECIFICATION\0\0\0\0\0\0\0\0\0"
 
 #define CDIO_EXTENT_BLOCKS(size) ((size + (ISO_BLOCKSIZE - 1)) / ISO_BLOCKSIZE)
 
@@ -395,7 +397,7 @@ typedef struct iso9660_pvd_s  iso9660_pvd_t;
 /*!
   \brief ISO-9660 Supplementary Volume Descriptor.
 
-  This is used for Joliet Extentions and is almost the same as the
+  This is used for Joliet Extensions and is almost the same as the
   the primary descriptor but two unused fields, "unused1" and "unused3
   become "flags and "escape_sequences" respectively.
 */
@@ -506,6 +508,37 @@ struct iso9660_svd_s {
 
 typedef struct iso9660_svd_s  iso9660_svd_t;
 
+/*!
+  \brief ISO-9660 Boot Record Volume Descriptor.
+ */
+struct iso9660_brvd_s {
+    uint8_t          type;                         /**< ISO_VD_BOOT_RECORD - 0 */
+    char             id[5];                        /**< ISO_STANDARD_ID "CD001" */
+    uint8_t          version;                      /**< value 1 for El Torito */
+    char             system_id[ISO_MAX_SYSTEM_ID]; /**< Boot system ID */
+    uint8_t          unused1[32];                  /**< unused - value 0 */
+    uint32_t         boot_catalog_sector;          /**< first sector of boot catalog */
+    uint8_t          unused2[1973];                /**< Unused - value 0 */
+} GNUC_PACKED;
+
+typedef struct iso9660_brvd_s  iso9660_brvd_t;
+
+/*!
+  \brief ISO-9660 Boot Record Volume Descriptor.
+ */
+struct iso9660_br_s {
+    uint8_t          boot_id;                      /**< Boot indicator - 0x88 */
+    uint8_t          media_type;                   /**< Boot media type - 0 for no emul. */
+    uint16_t         load_seg;                     /**< Load segment for x86 */
+    uint8_t          system_type;                  /**< System type - 0 for x86 */
+    uint8_t          unused1;
+    uint16_t         num_sectors;                  /**< Virtual sectors count of the image */
+    uint32_t         image_lsn;                    /**< Start address of the image */
+    uint8_t          unused2[20];
+} GNUC_PACKED;
+
+typedef struct iso9660_br_s  iso9660_br_t;
+
 PRAGMA_END_PACKED
 
 /*! \brief A data type for a list of ISO9660
@@ -550,7 +583,7 @@ struct iso9660_stat_s { /* big endian!! */
   /* Multi-extent aware size, in bytes.
 
      It is guaranteed that the bytes are stored as gapless string in a
-     continguous sequence of blocks. I.e. they can be read sequentially
+     contiguous sequence of blocks. I.e. they can be read sequentially
      starting at iso9660_stat_s.lsn.
      Data files which do not fulfil this promise cause a warning message
      and are not represented by this type of struct.
@@ -582,7 +615,8 @@ extern enum iso_extension_enum_s {
   ISO_EXTENSION_JOLIET_LEVEL2 = 0x02,
   ISO_EXTENSION_JOLIET_LEVEL3 = 0x04,
   ISO_EXTENSION_ROCK_RIDGE    = 0x08,
-  ISO_EXTENSION_HIGH_SIERRA   = 0x10
+  ISO_EXTENSION_HIGH_SIERRA   = 0x10,
+  ISO_EXTENSION_EL_TORITO     = 0x20
 } iso_extension_enums;
 
 
@@ -638,7 +672,7 @@ typedef struct _iso9660_s iso9660_t;
     contained in a file format that libiso9660 doesn't know natively
     (or knows imperfectly.)
 
-    Some tolerence allowed for positioning the ISO 9660 image. We scan
+    Some tolerance allowed for positioning the ISO 9660 image. We scan
     for STANDARD_ID and use that to set the eventual offset to adjust
     by (as long as that is <= i_fuzz).
 
@@ -650,7 +684,7 @@ typedef struct _iso9660_s iso9660_t;
                                  uint16_t i_fuzz);
 
   /*!
-    Open an ISO 9660 image for reading with some tolerence for positioning
+    Open an ISO 9660 image for reading with some tolerance for positioning
     of the ISO9660 image. We scan for ISO_STANDARD_ID and use that to set
     the eventual offset to adjust by (as long as that is <= i_fuzz).
 
@@ -766,7 +800,7 @@ typedef struct _iso9660_s iso9660_t;
     tm will reported in GMT.
   */
   bool iso9660_get_dtime (const iso9660_dtime_t *idr_date, bool b_localtime,
-                          /*out*/ struct tm *tm);
+                          /*out*/ struct tm *p_tm);
 
 
   /*!
@@ -857,7 +891,7 @@ typedef struct _iso9660_s iso9660_t;
 
   /*!
     Take psz_path and a version number and turn that into a ISO-9660
-    pathname.  (That's just the pathname followd by ";" and the version
+    pathname.  (That's just the pathname followed by ";" and the version
     number. For example, mydir/file.ext -> MYDIR/FILE.EXT;1 for version
     1. The resulting ISO-9660 pathname is returned.
   */
@@ -1202,7 +1236,7 @@ lsn_t iso9660_get_dir_extent(const iso9660_dir_t *p_idr);
 
     @param p_iso the ISO-9660 file image to get data from
 
-    @param u_file_limit the maximimum number of (non-rock-ridge) files
+    @param u_file_limit the maximum number of (non-rock-ridge) files
     to consider before giving up and returning "dunno".
 
     "dunno" can also be returned if there was some error encountered
@@ -1278,7 +1312,7 @@ lsn_t iso9660_get_dir_extent(const iso9660_dir_t *p_idr);
   void iso9660_set_evd (void *pd);
 
   /*!
-    Return true if ISO 9660 image has extended attrributes (XA).
+    Return true if ISO 9660 image has extended attributes (XA).
   */
   bool iso9660_ifs_is_xa (const iso9660_t * p_iso);
 

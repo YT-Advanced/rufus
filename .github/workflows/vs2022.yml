@@ -3,6 +3,7 @@ name: VS2022
 on: 
   push:
     paths-ignore:
+      - '.github/ISSUE_TEMPLATE/**'
       - '.gitignore'
       - '.gitattributes'
       - 'res/**'
@@ -35,17 +36,17 @@ jobs:
 
     strategy:
       matrix:
-        TARGET_PLATFORM: [x64, x86, arm64, arm]
+        TARGET_PLATFORM: [x64, x86, arm64]
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
         submodules: recursive
 
     - name: Add MSBuild to PATH
-      uses: microsoft/setup-msbuild@v1
+      uses: microsoft/setup-msbuild@v2
       with:
         msbuild-architecture: x64
 
@@ -54,14 +55,18 @@ jobs:
       shell: bash
       if: ${{ !startsWith(github.ref, 'refs/tags/') }}
       # This ONLY works if the shell is bash or if using $env:GITHUB_OUTPUT
-      run: echo "option=/DALPHA" >> $GITHUB_OUTPUT
+      run: |
+        echo "option=/DALPHA" >> $GITHUB_OUTPUT
+        sed -b -i 's/VALUE "InternalName", "Rufus"/VALUE "InternalName", "Rufus (ALPHA)"/' ./src/rufus.rc
 
     - name: Set BETA
       id: set_beta
       shell: bash
       if: ${{ startsWith(github.ref, 'refs/tags/') && contains(github.ref, 'BETA') }}
       # This ONLY works if the shell is bash or if using $env:GITHUB_OUTPUT
-      run: echo "option=/DBETA" >> $GITHUB_OUTPUT
+      run: |
+        echo "option=/DBETA" >> $GITHUB_OUTPUT
+        sed -b -i 's/VALUE "InternalName", "Rufus"/VALUE "InternalName", "Rufus (BETA)"/' ./src/rufus.rc
 
     - name: Build
       shell: cmd
@@ -82,10 +87,21 @@ jobs:
         curl --request POST --url https://www.virustotal.com/api/v3/monitor/items --header 'x-apikey: ${{ secrets.VIRUSTOTAL_API_KEY }}' --form path='/rufus_${{ matrix.TARGET_PLATFORM }}.exe' --form file=@./rufus_${{ matrix.TARGET_PLATFORM }}.exe
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: ${{ github.event_name == 'push' }}
       with:
-        name: VS2022
+        name: ${{ matrix.TARGET_PLATFORM }}
         path: |
           ./*.exe
           ./*.pdb
+
+  Extra-Step-To-Merge-Artifacts-Thanks-To-Upload-Artifact-v4-Breaking-Backwards-Compatibility:
+    runs-on: windows-latest
+    needs: VS2022-Build
+    steps:
+      - name: Merge Artifacts
+        uses: actions/upload-artifact/merge@v4
+        if: ${{ github.event_name == 'push' }}
+        with:
+          name: VS2022
+          delete-merged: true

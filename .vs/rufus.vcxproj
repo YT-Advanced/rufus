@@ -127,18 +127,18 @@
       <AdditionalIncludeDirectories>..\src;..\src\msvc-missing;..\src\ms-sys\inc;..\src\syslinux\libinstaller;..\src\syslinux\libfat;..\src\syslinux\win;..\src\libcdio;..\src\getopt;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <CompileAs>CompileAsC</CompileAs>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <ExceptionHandling>false</ExceptionHandling>
+      <ExceptionHandling>Async</ExceptionHandling>
       <DisableSpecificWarnings>4091;5255;28251;28252;28253;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <Optimization>Disabled</Optimization>
       <AdditionalOptions>/utf-8 $(ExternalCompilerOptions) %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>advapi32.lib;comctl32.lib;comdlg32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;wintrust.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>advapi32.lib;comctl32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;version.lib;virtdisk.lib;wininet.lib;wintrust.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <TargetMachine>MachineX86</TargetMachine>
-      <DelayLoadDLLs>advapi32.dll;comctl32.dll;comdlg32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;wintrust.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <DelayLoadDLLs>advapi32.dll;comctl32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;version.dll;virtdisk.dll;wininet.dll;wintrust.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
     <ResourceCompile>
       <PreprocessorDefinitions>_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -157,17 +157,17 @@
       <AdditionalIncludeDirectories>..\src;..\src\msvc-missing;..\src\ms-sys\inc;..\src\syslinux\libinstaller;..\src\syslinux\libfat;..\src\syslinux\win;..\src\libcdio;..\src\getopt;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <CompileAs>CompileAsC</CompileAs>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <ExceptionHandling>false</ExceptionHandling>
+      <ExceptionHandling>Async</ExceptionHandling>
       <DisableSpecificWarnings>4091;5255;28251;28252;28253;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <AdditionalOptions>/utf-8 $(ExternalCompilerOptions) %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>advapi32.lib;comctl32.lib;comdlg32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;wintrust.lib;ole32.lib;advapi32.lib;gdi32.lib;shell32.lib;comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>advapi32.lib;comctl32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;version.lib;virtdisk.lib;wininet.lib;wintrust.lib;ole32.lib;advapi32.lib;gdi32.lib;shell32.lib;comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>C:\Program Files (x86)\Windows Kits\10\Lib\10.0.15063.0\um\arm</AdditionalLibraryDirectories>
-      <DelayLoadDLLs>advapi32.dll;comctl32.dll;comdlg32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;wintrust.dll;ole32.dll;advapi32.dll;gdi32.dll;shell32.dll;comdlg32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <DelayLoadDLLs>advapi32.dll;comctl32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;version.dll;virtdisk.dll;wininet.dll;wintrust.dll;ole32.dll;advapi32.dll;gdi32.dll;shell32.dll;comdlg32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
     <ResourceCompile>
       <PreprocessorDefinitions>_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -188,17 +188,17 @@
       <AdditionalIncludeDirectories>..\src;..\src\msvc-missing;..\src\ms-sys\inc;..\src\syslinux\libinstaller;..\src\syslinux\libfat;..\src\syslinux\win;..\src\libcdio;..\src\getopt;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <CompileAs>CompileAsC</CompileAs>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <ExceptionHandling>false</ExceptionHandling>
+      <ExceptionHandling>Async</ExceptionHandling>
       <DisableSpecificWarnings>4091;5255;28251;28252;28253;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <AdditionalOptions>/utf-8 $(ExternalCompilerOptions) %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>advapi32.lib;comctl32.lib;comdlg32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;wintrust.lib;ole32.lib;advapi32.lib;gdi32.lib;shell32.lib;comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>advapi32.lib;comctl32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;version.lib;virtdisk.lib;wininet.lib;wintrust.lib;ole32.lib;advapi32.lib;gdi32.lib;shell32.lib;comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>C:\Program Files (x86)\Windows Kits\10\Lib\10.0.16299.0\um\arm64</AdditionalLibraryDirectories>
-      <DelayLoadDLLs>advapi32.dll;comctl32.dll;comdlg32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;wintrust.dll;ole32.dll;advapi32.dll;gdi32.dll;shell32.dll;comdlg32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <DelayLoadDLLs>advapi32.dll;comctl32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;version.dll;virtdisk.dll;wininet.dll;wintrust.dll;ole32.dll;advapi32.dll;gdi32.dll;shell32.dll;comdlg32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
     <ResourceCompile>
       <PreprocessorDefinitions>_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -223,18 +223,18 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <CompileAs>CompileAsC</CompileAs>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <ExceptionHandling>false</ExceptionHandling>
+      <ExceptionHandling>Async</ExceptionHandling>
       <DisableSpecificWarnings>4091;5255;28251;28252;28253;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <Optimization>Disabled</Optimization>
       <AdditionalOptions>/utf-8 $(ExternalCompilerOptions) %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>advapi32.lib;comctl32.lib;comdlg32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;wintrust.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>advapi32.lib;comctl32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;version.lib;virtdisk.lib;wininet.lib;wintrust.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <TargetMachine>MachineX64</TargetMachine>
-      <DelayLoadDLLs>advapi32.dll;comctl32.dll;comdlg32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;wintrust.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <DelayLoadDLLs>advapi32.dll;comctl32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;version.dll;virtdisk.dll;wininet.dll;wintrust.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
     <ResourceCompile>
       <PreprocessorDefinitions>_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -253,20 +253,20 @@
       <AdditionalIncludeDirectories>..\src;..\src\msvc-missing;..\src\ms-sys\inc;..\src\syslinux\libinstaller;..\src\syslinux\libfat;..\src\syslinux\win;..\src\libcdio;..\src\getopt;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <CompileAs>CompileAsC</CompileAs>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <ExceptionHandling>false</ExceptionHandling>
+      <ExceptionHandling>Async</ExceptionHandling>
       <DisableSpecificWarnings>4091;5255;28251;28252;28253;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <UndefinePreprocessorDefinitions>NDEBUG</UndefinePreprocessorDefinitions>
       <AdditionalOptions>/utf-8 $(ExternalCompilerOptions) %(AdditionalOptions)</AdditionalOptions>
       <StringPooling>true</StringPooling>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>advapi32.lib;comctl32.lib;comdlg32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;wintrust.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>advapi32.lib;comctl32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;version.lib;virtdisk.lib;wininet.lib;wintrust.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <TargetMachine>MachineX86</TargetMachine>
       <AdditionalOptions>/BREPRO %(AdditionalOptions)</AdditionalOptions>
-      <DelayLoadDLLs>advapi32.dll;comctl32.dll;comdlg32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;wintrust.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <DelayLoadDLLs>advapi32.dll;comctl32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;version.dll;virtdisk.dll;wininet.dll;wintrust.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
     <ResourceCompile>
       <PreprocessorDefinitions>_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -285,20 +285,20 @@
       <AdditionalIncludeDirectories>..\src;..\src\msvc-missing;..\src\ms-sys\inc;..\src\syslinux\libinstaller;..\src\syslinux\libfat;..\src\syslinux\win;..\src\libcdio;..\src\getopt;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <CompileAs>CompileAsC</CompileAs>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <ExceptionHandling>false</ExceptionHandling>
+      <ExceptionHandling>Async</ExceptionHandling>
       <DisableSpecificWarnings>4091;5255;28251;28252;28253;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <UndefinePreprocessorDefinitions>NDEBUG</UndefinePreprocessorDefinitions>
       <AdditionalOptions>/utf-8 $(ExternalCompilerOptions) %(AdditionalOptions)</AdditionalOptions>
       <StringPooling>true</StringPooling>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>advapi32.lib;comctl32.lib;comdlg32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;wintrust.lib;ole32.lib;advapi32.lib;gdi32.lib;shell32.lib;comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>advapi32.lib;comctl32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;version.lib;virtdisk.lib;wininet.lib;wintrust.lib;ole32.lib;advapi32.lib;gdi32.lib;shell32.lib;comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>C:\Program Files (x86)\Windows Kits\10\Lib\10.0.15063.0\um\arm</AdditionalLibraryDirectories>
       <AdditionalOptions>/BREPRO %(AdditionalOptions)</AdditionalOptions>
-      <DelayLoadDLLs>advapi32.dll;comctl32.dll;comdlg32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;wintrust.dll;ole32.dll;advapi32.dll;gdi32.dll;shell32.dll;comdlg32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <DelayLoadDLLs>advapi32.dll;comctl32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;version.dll;virtdisk.dll;wininet.dll;wintrust.dll;ole32.dll;advapi32.dll;gdi32.dll;shell32.dll;comdlg32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
     <ResourceCompile>
       <PreprocessorDefinitions>_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -319,20 +319,20 @@
       <AdditionalIncludeDirectories>..\src;..\src\msvc-missing;..\src\ms-sys\inc;..\src\syslinux\libinstaller;..\src\syslinux\libfat;..\src\syslinux\win;..\src\libcdio;..\src\getopt;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <CompileAs>CompileAsC</CompileAs>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <ExceptionHandling>false</ExceptionHandling>
+      <ExceptionHandling>Async</ExceptionHandling>
       <DisableSpecificWarnings>4091;5255;28251;28252;28253;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <UndefinePreprocessorDefinitions>NDEBUG</UndefinePreprocessorDefinitions>
       <AdditionalOptions>/utf-8 $(ExternalCompilerOptions) %(AdditionalOptions)</AdditionalOptions>
       <StringPooling>true</StringPooling>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>advapi32.lib;comctl32.lib;comdlg32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;wintrust.lib;ole32.lib;advapi32.lib;gdi32.lib;shell32.lib;comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>advapi32.lib;comctl32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;version.lib;virtdisk.lib;wininet.lib;wintrust.lib;ole32.lib;advapi32.lib;gdi32.lib;shell32.lib;comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>C:\Program Files (x86)\Windows Kits\10\Lib\10.0.16299.0\um\arm64</AdditionalLibraryDirectories>
       <AdditionalOptions>/BREPRO %(AdditionalOptions)</AdditionalOptions>
-      <DelayLoadDLLs>advapi32.dll;comctl32.dll;comdlg32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;wintrust.dll;ole32.dll;advapi32.dll;gdi32.dll;shell32.dll;comdlg32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <DelayLoadDLLs>advapi32.dll;comctl32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;version.dll;virtdisk.dll;wininet.dll;wintrust.dll;ole32.dll;advapi32.dll;gdi32.dll;shell32.dll;comdlg32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
     <ResourceCompile>
       <PreprocessorDefinitions>_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -356,20 +356,20 @@
       <AdditionalIncludeDirectories>..\src;..\src\msvc-missing;..\src\ms-sys\inc;..\src\syslinux\libinstaller;..\src\syslinux\libfat;..\src\syslinux\win;..\src\libcdio;..\src\getopt;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <CompileAs>CompileAsC</CompileAs>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <ExceptionHandling>false</ExceptionHandling>
+      <ExceptionHandling>Async</ExceptionHandling>
       <DisableSpecificWarnings>4091;5255;28251;28252;28253;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <UndefinePreprocessorDefinitions>NDEBUG</UndefinePreprocessorDefinitions>
       <AdditionalOptions>/utf-8 $(ExternalCompilerOptions) %(AdditionalOptions)</AdditionalOptions>
       <StringPooling>true</StringPooling>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>advapi32.lib;comctl32.lib;comdlg32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;wintrust.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>advapi32.lib;comctl32.lib;crypt32.lib;gdi32.lib;ole32.lib;dwmapi.lib;setupapi.lib;shell32.lib;shlwapi.lib;version.lib;virtdisk.lib;wininet.lib;wintrust.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <TargetMachine>MachineX64</TargetMachine>
       <AdditionalOptions>/BREPRO %(AdditionalOptions)</AdditionalOptions>
-      <DelayLoadDLLs>advapi32.dll;comctl32.dll;comdlg32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;wintrust.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <DelayLoadDLLs>advapi32.dll;comctl32.dll;crypt32.dll;gdi32.dll;ole32.dll;dwmapi.dll;setupapi.dll;shell32.dll;shlwapi.dll;version.dll;virtdisk.dll;wininet.dll;wintrust.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
     <ResourceCompile>
       <PreprocessorDefinitions>_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -381,7 +381,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\src\badblocks.c" />
-    <ClCompile Include="..\src\cpu.c" />
     <ClCompile Include="..\src\dos_locale.c" />
     <ClCompile Include="..\src\drive.c" />
     <ClCompile Include="..\src\format.c" />
@@ -397,7 +396,7 @@
     <ClCompile Include="..\src\process.c" />
     <ClCompile Include="..\src\re.c" />
     <ClCompile Include="..\src\rufus.c" />
-    <ClCompile Include="..\src\checksum.c" />
+    <ClCompile Include="..\src\hash.c" />
     <ClCompile Include="..\src\smart.c" />
     <ClCompile Include="..\src\stdfn.c" />
     <ClCompile Include="..\src\stdio.c" />
@@ -413,7 +412,6 @@
     <ClInclude Include="..\res\grub\grub_version.h" />
     <ClInclude Include="..\src\badblocks.h" />
     <ClInclude Include="..\src\bled\bled.h" />
-    <ClInclude Include="..\src\cpu.h" />
     <ClInclude Include="..\src\drive.h" />
     <ClInclude Include="..\src\format.h" />
     <ClInclude Include="..\src\gpt_types.h" />

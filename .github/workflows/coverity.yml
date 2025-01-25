@@ -4,6 +4,7 @@ on:
   push:
     branches: [master]
     paths-ignore:
+      - '.github/ISSUE_TEMPLATE/**'
       - '.gitignore'
       - '.gitattributes'
       - 'res/**'
@@ -27,7 +28,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
         submodules: recursive
@@ -44,7 +45,7 @@ jobs:
       run: echo "${{github.workspace}}/cov-analysis-win64/bin" >> $GITHUB_PATH
 
     - name: Add MSBuild to PATH
-      uses: microsoft/setup-msbuild@v1
+      uses: microsoft/setup-msbuild@v2
 
     - name: Build with Coverity
       run: | 
@@ -52,7 +53,7 @@ jobs:
         cov-build.exe --dir cov-int msbuild ${{ env.SOLUTION_FILE_PATH }} /m /p:Configuration=${{ env.BUILD_CONFIGURATION }},Platform=${{ env.TARGET_PLATFORM }}
 
     - name: Publish Coverity artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: cov-int
         path: cov-int/

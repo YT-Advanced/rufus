@@ -2,7 +2,7 @@
  *
  *   Copyright 2003 Lars Munch Christensen - All Rights Reserved
  *   Copyright 1998-2008 H. Peter Anvin - All Rights Reserved
- *   Copyright 2012-2021 Pete Batard
+ *   Copyright 2012-2024 Pete Batard
  *
  *   Based on the Linux installer program for SYSLINUX by H. Peter Anvin
  *
@@ -72,7 +72,7 @@ int libfat_readfile(intptr_t pp, void *buf, size_t secsize, libfat_sector_t sect
 	}
 
 	if (bytes_read != secsize) {
-		uprintf("Sector %llu: Read %d bytes instead of %d requested", sector, bytes_read, secsize);
+		uprintf("Sector %llu: Read %lu bytes instead of %zu requested", sector, bytes_read, secsize);
 		return 0;
 	}
 
@@ -88,7 +88,7 @@ BOOL InstallSyslinux(DWORD drive_index, char drive_letter, int file_system)
 	const LARGE_INTEGER liZero = { {0, 0} };
 	HANDLE f_handle = INVALID_HANDLE_VALUE;
 	HANDLE d_handle = INVALID_HANDLE_VALUE;
-	DWORD bytes_read, bytes_written, err;
+	DWORD bytes_read, err;
 	S_NTFSSECT_VOLINFO vol_info = { 0 };
 	LARGE_INTEGER vcn, lba, len;
 	S_NTFSSECT_EXTENT extent;
@@ -111,10 +111,10 @@ BOOL InstallSyslinux(DWORD drive_index, char drive_letter, int file_system)
 	libfat_sector_t *sectors = NULL;
 	int ldlinux_sectors;
 	uint32_t ldlinux_cluster;
-	int i, nsectors, sl_fs_stype;
+	int i, w, nsectors, sl_fs_stype;
 	BOOL use_v5 = (boot_type == BT_SYSLINUX_V6) || ((boot_type == BT_IMAGE) && (SL_MAJOR(img_report.sl_version) >= 5));
 
-	PrintInfoDebug(0, MSG_234, (boot_type == BT_IMAGE)?img_report.sl_version_str:embedded_sl_version_str[use_v5?1:0]);
+	PrintInfoDebug(0, MSG_234, (boot_type == BT_IMAGE) ? img_report.sl_version_str : embedded_sl_version_str[use_v5?1:0]);
 
 	/* 4K sector size workaround */
 	SECTOR_SHIFT = 0;
@@ -208,12 +208,11 @@ BOOL InstallSyslinux(DWORD drive_index, char drive_letter, int file_system)
 
 	/* Write ldlinux.sys file */
 	if (!WriteFileWithRetry(f_handle, (const char _force *)syslinux_ldlinux[0],
-		   syslinux_ldlinux_len[0], &bytes_written, WRITE_RETRIES)) {
+		   syslinux_ldlinux_len[0], NULL, WRITE_RETRIES)) {
 		uprintf("Could not write '%s': %s", &path[3], WindowsErrorString());
 		goto out;
 	}
-	if (!WriteFileWithRetry(f_handle, syslinux_adv, 2 * ADV_SIZE,
-		   &bytes_written, WRITE_RETRIES)) {
+	if (!WriteFileWithRetry(f_handle, syslinux_adv, 2 * ADV_SIZE, NULL, WRITE_RETRIES)) {
 		uprintf("Could not write ADV to '%s': %s", &path[3], WindowsErrorString());
 		goto out;
 	}
@@ -287,8 +286,14 @@ BOOL InstallSyslinux(DWORD drive_index, char drive_letter, int file_system)
 		goto out;
 	}
 
-	/* Patch ldlinux.sys and the boot sector */
-	if (syslinux_patch(sectors, nsectors, 0, 0, NULL, NULL) < 0) {
+	/* Set the base directory and patch ldlinux.sys and the boot sector */
+	for (i = (int)strlen(img_report.cfg_path); (i > 0) && (img_report.cfg_path[i] != '/'); i--);
+	if (i > 0)
+		img_report.cfg_path[i] = 0;
+	w = syslinux_patch(sectors, nsectors, 0, 0, img_report.cfg_path, NULL);
+	if (i > 0)
+		img_report.cfg_path[i] = '/';
+	if (w < 0) {
 		uprintf("Could not patch Syslinux files.");
 		uprintf("WARNING: This could be caused by your firewall having modified downloaded content, such as 'ldlinux.sys'...");
 		goto out;
@@ -296,8 +301,7 @@ BOOL InstallSyslinux(DWORD drive_index, char drive_letter, int file_system)
 
 	/* Rewrite the file */
 	if (!SetFilePointerEx(f_handle, liZero, NULL, FILE_BEGIN) ||
-		!WriteFileWithRetry(f_handle, syslinux_ldlinux[0], syslinux_ldlinux_len[0],
-			   &bytes_written, WRITE_RETRIES)) {
+		!WriteFileWithRetry(f_handle, syslinux_ldlinux[0], syslinux_ldlinux_len[0], NULL, WRITE_RETRIES)) {
 		uprintf("Could not rewrite '%s': %s\n", &path[3], WindowsErrorString());
 		goto out;
 	}
@@ -322,8 +326,7 @@ BOOL InstallSyslinux(DWORD drive_index, char drive_letter, int file_system)
 
 	/* Write boot sector back */
 	if (!SetFilePointerEx(d_handle, liZero, NULL, FILE_BEGIN) ||
-		!WriteFileWithRetry(d_handle, sectbuf, SECTOR_SIZE,
-			   &bytes_written, WRITE_RETRIES)) {
+		!WriteFileWithRetry(d_handle, sectbuf, SECTOR_SIZE, NULL, WRITE_RETRIES)) {
 		uprintf("Could not write Syslinux boot record: %s", WindowsErrorString());
 		goto out;
 	}
@@ -362,8 +365,7 @@ BOOL InstallSyslinux(DWORD drive_index, char drive_letter, int file_system)
 			uprintf("Unable to create '%s'\n", path);
 			goto out;
 		}
-		if (!WriteFileWithRetry(f_handle, syslinux_mboot, syslinux_mboot_len,
-			   &bytes_written, WRITE_RETRIES)) {
+		if (!WriteFileWithRetry(f_handle, syslinux_mboot, syslinux_mboot_len, NULL, WRITE_RETRIES)) {
 			uprintf("Could not write '%s'", path);
 			goto out;
 		}
@@ -409,28 +411,30 @@ uint16_t GetSyslinuxVersion(char* buf, size_t buf_size, char** ext)
 		return 0;
 
 	// Start at 64 to avoid the short incomplete version at the beginning of ldlinux.sys
-	for (i=64; i<buf_size-64; i++) {
+	for (i = 64; i < buf_size - 64; i++) {
 		if (memcmp(&buf[i], LINUX, sizeof(LINUX)) == 0) {
 			// Check for ISO or SYS prefix
-			if (!( ((buf[i-3] == 'I') && (buf[i-2] == 'S') && (buf[i-1] == 'O'))
-			    || ((buf[i-3] == 'S') && (buf[i-2] == 'Y') && (buf[i-1] == 'S')) ))
+			if (!( ((buf[i - 3] == 'I') && (buf[i - 2] == 'S') && (buf[i - 1] == 'O'))
+			    || ((buf[i - 3] == 'S') && (buf[i - 2] == 'Y') && (buf[i - 1] == 'S')) ))
 			  continue;
 			i += sizeof(LINUX);
-			version = (((uint8_t)strtoul(&buf[i], &p, 10))<<8) + (uint8_t)strtoul(&p[1], &p, 10);
+			version = (((uint8_t)strtoul(&buf[i], &p, 10)) << 8) + (uint8_t)strtoul(&p[1], &p, 10);
+			// Our buffer is either from our internal legit syslinux (i.e. with a NUL terminated
+			// version string) or from a buffer that has been NUL-terminated through read_file(),
+			// so the string we work with in p is always NUL terminated at this stage.
 			if (version == 0)
 				continue;
-			p[safe_strlen(p)] = 0;
 			// Ensure that our extra version string starts with a slash
 			*p = '/';
 			// Remove the x.yz- duplicate if present
-			for (j=0; (buf[i+j] == p[1+j]) && (buf[i+j] != ' '); j++);
-			if (p[j+1] == '-')
+			for (j = 0; (buf[i + j] == p[1 + j]) && (buf[i + j] != ' '); j++);
+			if (p[j + 1] == '-')
 				j++;
 			if (j >= 4) {
 				p[j] = '/';
 				p = &p[j];
 			}
-			for (j=safe_strlen(p)-1; j>0; j--) {
+			for (j = safe_strlen(p) - 1; j > 0; j--) {
 				// Arch Linux affixes a star for their version - who knows what else is out there...
 				if ((p[j] == ' ') || (p[j] == '*'))
 					p[j] = 0;
@@ -438,15 +442,15 @@ uint16_t GetSyslinuxVersion(char* buf, size_t buf_size, char** ext)
 					break;
 			}
 			// Sanitize the string
-			for (j=1; j<safe_strlen(p); j++) {
+			for (j = 1; j < safe_strlen(p); j++) {
 				// Some people are bound to have invalid chars in their date strings
-				for (k=0; k<sizeof(unauthorized); k++) {
+				for (k = 0; k < sizeof(unauthorized); k++) {
 					if (p[j] == unauthorized[k])
 						p[j] = '_';
 				}
 			}
 			// If all we have is a slash, return the empty string for the extra version
-			*ext = (p[1] == 0)?nullstr:p;
+			*ext = (p[1] == 0) ? nullstr : p;
 			return version;
 		}
 	}

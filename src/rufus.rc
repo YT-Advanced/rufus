@@ -33,7 +33,7 @@ LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 IDD_DIALOG DIALOGEX 12, 12, 232, 326
 STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_ACCEPTFILES
-CAPTION "Rufus 3.22.2004"
+CAPTION "Rufus 4.7.2218"
 FONT 9, "Segoe UI Symbol", 400, 0, 0x0
 BEGIN
     LTEXT           "Drive Properties",IDS_DRIVE_PROPERTIES_TXT,8,6,53,12,NOT WS_GROUP
@@ -59,8 +59,8 @@ BEGIN
     CONTROL         "List USB Hard Drives",IDC_LIST_USB_HDD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,8,119,216,10
     CONTROL         "Add fixes for old BIOSes (extra partition, align, etc.)",IDC_OLD_BIOS_FIXES,
                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,8,129,216,10
-    CONTROL         "Use Rufus MBR with BIOS ID",IDC_RUFUS_MBR,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,8,139,110,10
-    COMBOBOX        IDC_DISK_ID,128,139,96,30,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "Enable runtime UEFI media validation",IDC_UEFI_MEDIA_VALIDATION,
+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,8,139,216,10
     LTEXT           "Format Options",IDS_FORMAT_OPTIONS_TXT,8,152,57,12,NOT WS_GROUP
     LTEXT           "Volume label",IDS_LABEL_TXT,8,167,216,8
     EDITTEXT        IDC_LABEL,8,176,216,12,ES_AUTOHSCROLL
@@ -95,7 +95,7 @@ BEGIN
     DEFPUSHBUTTON   "OK",IDOK,253,216,50,12,WS_GROUP
 END
 
-IDD_CHECKSUM DIALOGEX 0, 0, 301, 110
+IDD_HASH DIALOGEX 0, 0, 301, 110
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Checksums"
 FONT 9, "Segoe UI Symbol", 400, 0, 0x0
@@ -247,12 +247,12 @@ END
 // TEXTINCLUDE
 //
 
-1 TEXTINCLUDE 
+1 TEXTINCLUDE
 BEGIN
     "resource.h\0"
 END
 
-2 TEXTINCLUDE 
+2 TEXTINCLUDE
 BEGIN
     "#ifndef _USING_V110_SDK71_\r\n"
     "#define _USING_V110_SDK71_\r\n"
@@ -264,7 +264,7 @@ BEGIN
     "\0"
 END
 
-3 TEXTINCLUDE 
+3 TEXTINCLUDE
 BEGIN
     "\r\n"
     "IDR_LC_RUFUS_LOC        RCDATA                  ""../res/loc/embedded.loc""\r\n"
@@ -305,6 +305,13 @@ BEGIN
     "IDR_FD_EGA18_CPX        RCDATA                  ""../res/freedos/EGA18.CPX""\r\n"
     "IDR_XT_HOGGER           RCDATA                  ""../res/hogger/hogger.exe""\r\n"
     "IDR_UEFI_NTFS           RCDATA                  ""../res/uefi/uefi-ntfs.img""\r\n"
+    "IDR_SETUP_X64           RCDATA                  ""../res/setup/setup_x64.exe""\r\n"
+    "IDR_SETUP_ARM64         RCDATA                  ""../res/setup/setup_arm64.exe""\r\n"
+    "IDR_MD5_BOOTIA32        RCDATA                  ""../res/md5/bootia32.efi""\r\n"
+    "IDR_MD5_BOOTX64         RCDATA                  ""../res/md5/bootx64.efi""\r\n"
+    "IDR_MD5_BOOTARM         RCDATA                  ""../res/md5/bootarm.efi""\r\n"
+    "IDR_MD5_BOOTAA64        RCDATA                  ""../res/md5/bootaa64.efi""\r\n"
+    "IDR_MD5_BOOTRISCV64     RCDATA                  ""../res/md5/bootriscv64.efi""\r\n"
     "IDI_LANG_16             RCDATA                  ""../res/icons/lang-16.png""\r\n"
     "IDI_INFO_16             RCDATA                  ""../res/icons/info-16.png""\r\n"
     "IDI_SETTINGS_16         RCDATA                  ""../res/icons/settings-16.png""\r\n"
@@ -351,7 +358,7 @@ BEGIN
     BEGIN
     END
 
-    IDD_CHECKSUM, DIALOG
+    IDD_HASH, DIALOG
     BEGIN
     END
 
@@ -392,8 +399,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 3,22,2004,0
- PRODUCTVERSION 3,22,2004,0
+ FILEVERSION 4,7,2218,0
+ PRODUCTVERSION 4,7,2218,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -411,13 +418,13 @@ BEGIN
             VALUE "Comments", "https://rufus.ie"
             VALUE "CompanyName", "Akeo Consulting"
             VALUE "FileDescription", "Rufus"
-            VALUE "FileVersion", "3.22.2004"
+            VALUE "FileVersion", "4.7.2218"
             VALUE "InternalName", "Rufus"
-            VALUE "LegalCopyright", "Â© 2011-2023 Pete Batard (GPL v3)"
+            VALUE "LegalCopyright", "© 2011-2025 Pete Batard (GPL v3)"
             VALUE "LegalTrademarks", "https://www.gnu.org/licenses/gpl-3.0.html"
-            VALUE "OriginalFilename", "rufus-3.22.exe"
+            VALUE "OriginalFilename", "rufus-4.7.exe"
             VALUE "ProductName", "Rufus"
-            VALUE "ProductVersion", "3.22.2004"
+            VALUE "ProductVersion", "4.7.2218"
         END
     END
     BLOCK "VarFileInfo"
@@ -485,6 +492,13 @@ IDR_FD_EGA17_CPX        RCDATA                  "../res/freedos/EGA17.CPX"
 IDR_FD_EGA18_CPX        RCDATA                  "../res/freedos/EGA18.CPX"
 IDR_XT_HOGGER           RCDATA                  "../res/hogger/hogger.exe"
 IDR_UEFI_NTFS           RCDATA                  "../res/uefi/uefi-ntfs.img"
+IDR_SETUP_X64           RCDATA                  "../res/setup/setup_x64.exe"
+IDR_SETUP_ARM64         RCDATA                  "../res/setup/setup_arm64.exe"
+IDR_MD5_BOOTIA32        RCDATA                  "../res/md5/bootia32.efi"
+IDR_MD5_BOOTX64         RCDATA                  "../res/md5/bootx64.efi"
+IDR_MD5_BOOTARM         RCDATA                  "../res/md5/bootarm.efi"
+IDR_MD5_BOOTAA64        RCDATA                  "../res/md5/bootaa64.efi"
+IDR_MD5_BOOTRISCV64     RCDATA                  "../res/md5/bootriscv64.efi"
 IDI_LANG_16             RCDATA                  "../res/icons/lang-16.png"
 IDI_INFO_16             RCDATA                  "../res/icons/info-16.png"
 IDI_SETTINGS_16         RCDATA                  "../res/icons/settings-16.png"

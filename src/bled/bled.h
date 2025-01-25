@@ -1,7 +1,7 @@
 /*
  * Bled (Base Library for Easy Decompression)
  *
- * Copyright © 2014-2015 Pete Batard <pete@akeo.ie>
+ * Copyright © 2014-2024 Pete Batard <pete@akeo.ie>
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
@@ -31,6 +31,7 @@ typedef enum {
 	BLED_COMPRESSION_XZ,		// .xz
 	BLED_COMPRESSION_7ZIP,		// .7z
 	BLED_COMPRESSION_VTSI,		// .vtsi
+	BLED_COMPRESSION_ZSTD,		// .zst
 	BLED_COMPRESSION_MAX
 } bled_compression_type;
 
@@ -50,7 +51,8 @@ int64_t bled_uncompress_to_dir(const char* src, const char* dir, int type);
 int64_t bled_uncompress_from_buffer_to_buffer(const char* src, const size_t src_len, char* dst, size_t dst_len, int type);
 
 /* Initialize the library.
- * When the parameters are not NULL you can:
+ * When the parameters are not NULL or zero you can:
+ * - specify the buffer size to use (must be larger than 64KB and a power of two)
  * - specify the printf-like function you want to use to output message
  *   void print_function(const char* format, ...);
  * - specify the read/write functions you want to use;
@@ -60,7 +62,7 @@ int64_t bled_uncompress_from_buffer_to_buffer(const char* src, const size_t src_
  *   void switch_function(const char* filename, const uint64_t filesize);
  * - point to an unsigned long variable, to be used to cancel operations when set to non zero
  */
-int bled_init(printf_t print_function, read_t read_function, write_t write_function,
+int bled_init(uint32_t buffer_size, printf_t print_function, read_t read_function, write_t write_function,
     progress_t progress_function, switch_t switch_function, unsigned long* cancel_request);
 
 /* This call frees any resource used by the library */

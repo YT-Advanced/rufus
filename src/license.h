@@ -1,7 +1,7 @@
 /*
  * Rufus: The Reliable USB Formatting Utility
  * Licensing Data
- * Copyright © 2011-2015 Pete Batard <pete@akeo.ie>
+ * Copyright © 2011-2023 Pete Batard <pete@akeo.ie>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -73,7 +73,7 @@ const char* additional_copyrights =
 "https://svn.reactos.org/reactos/trunk\\line\n"
 "GNU General Public License (GPL) v2 or later\\line\n"
 "\\line\n"
-"Bad blocks testing and ext2/ext3 formatting from e2fsprogs by Theodore T'so et al.:\\line\n"
+"Bad blocks testing and ext2/ext3 formatting from e2fsprogs by Theodore Ts'o et al.:\\line\n"
 "http://e2fsprogs.sourceforge.net/\\line\n"
 "GNU General Public License (GPL) v3 compatible\\line\n"
 "\\line\n"
@@ -89,8 +89,8 @@ const char* additional_copyrights =
 "https://www.codeguru.com/forum/showthread.php?p=1951973\\line\n"
 "Public Domain\\line\n"
 "\\line\n"
-"Handle search & process enumeration from Process Hacker by wj32 & dmex:\\line\n"
-"https://processhacker.sourceforge.io/\\line\n"
+"Handle search & process enumeration from System Informer by wj32 & dmex:\\line\n"
+"https://systeminformer.sourceforge.io/\\line\n"
 "GNU General Public License (GPL) v3 or later\\line\n"
 "\\line\n"
 "Decompression support from BusyBox/Bled:\\line\n"
@@ -114,17 +114,30 @@ const char* additional_copyrights =
 "https://kolibrios.org/\\line\n"
 "GNU General Public License (GPL) v2 or later\\line\n"
 "\\line\n"
-"MD5 checksum by Ron Rivest, Colin Plumb et al.\\line\n"
+"MD5 digest functions by Ron Rivest, Colin Plumb et al.\\line\n"
 "Public Domain\\line\n"
 "\\line\n"
-"SHA-1 checksum from GnuPG:\\line\n"
+"SHA1 digest functions from GnuPG:\\line\n"
 "https://www.gnupg.org/\\line\n"
 "GNU General Public License (GPL) v3 or later\\line\n"
 "\\line\n"
-"SHA-256 checksum from 7-zip by Igor Pavlov and Crypto++ by Wei Dai:\\line\n"
+"SHA256 digest functions from 7-zip by Igor Pavlov and Crypto++ by Wei Dai:\\line\n"
 "https://7-zip.org/\\line\n"
 "https://github.com/weidai11/cryptopp/\\line\n"
 "Public Domain\\line\n"
+"\\line\n"
+"SHA512 digest functions from libtomcrypt:\\line\n"
+"https://github.com/libtom/libtomcrypt\\line\n"
+"Public Domain\\line\n"
+"\\line\n"
+"PE256 digest functions from U-Boot:\\line\n"
+"https://github.com/u-boot/u-boot\\line\n"
+"GNU General Public License (GPL) v2 or later\\line\n"
+"\\line\n"
+"SkuSiPolicy.p7b parsing derived from:\\line\n"
+"https://gist.github.com/mattifestation/92e545bf1ee5b68eeb71d254cec2f78e\\line\n"
+"by Matthew Graeber, with contributions by James Forshaw\\line\n"
+"BSD 3-Clause\\line\n"
 "\\line\n"
 "About and License dialogs inspired by WinSCP by Martin Prikryl\\line\n"
 "https://winscp.net/\\line\n"

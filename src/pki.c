@@ -1,7 +1,7 @@
 /*
  * Rufus: The Reliable USB Formatting Utility
  * PKI functions (code signing, etc.)
- * Copyright © 2015-2022 Pete Batard <pete@akeo.ie>
+ * Copyright © 2015-2024 Pete Batard <pete@akeo.ie>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,17 +48,61 @@ const char* cert_name[3] = { "Akeo Consulting", "Akeo Systems", "Pete Batard" };
 const char* cert_country = "IE";
 
 typedef struct {
-	LPWSTR lpszProgramName;
-	LPWSTR lpszPublisherLink;
-	LPWSTR lpszMoreInfoLink;
+	LPWSTR      lpszProgramName;
+	LPWSTR      lpszPublisherLink;
+	LPWSTR      lpszMoreInfoLink;
 } SPROG_PUBLISHERINFO, *PSPROG_PUBLISHERINFO;
 
 // https://msdn.microsoft.com/en-us/library/ee442238.aspx
 typedef struct {
-	BLOBHEADER BlobHeader;
-	RSAPUBKEY  RsaHeader;
-	BYTE       Modulus[256];	// 2048 bit modulus
+	BLOBHEADER  BlobHeader;
+	RSAPUBKEY   RsaHeader;
+	BYTE        Modulus[256];	// 2048 bit modulus
 } RSA_2048_PUBKEY;
+
+// For PKCS7 WDAC Code Integrity processing
+#define PE256_HASHSIZE  32
+
+const GUID SKU_CODE_INTEGRITY_POLICY = { 0x976d12c8, 0xcb9f, 0x4730, { 0xbe, 0x52, 0x54, 0x60, 0x08, 0x43, 0x23, 0x8e} };
+
+typedef struct {
+	WORD        Nano;
+	WORD        Micro;
+	WORD        Minor;
+	WORD        Major;
+} CIVersion;
+
+typedef struct {
+	DWORD       PolicyFormatVersion;
+	GUID        PolicyTypeGUID;
+	GUID        PlatformGUID;
+	DWORD       OptionFlags;
+	DWORD       EKURuleEntryCount;
+	DWORD       FileRuleEntryCount;
+	DWORD       SignerRuleEntryCount;
+	DWORD       SignerScenarioEntryCount;
+	CIVersion   PolicyVersion;
+	DWORD       HeaderLength;
+} CIHeader;
+
+typedef struct {
+	DWORD       Type;
+	DWORD       FileNameLength;
+	WCHAR       FileName[0];
+} CIFileRuleHeader;
+
+typedef struct {
+	DWORD       Unknown;
+	CIVersion   Version;
+	DWORD       HashLength;
+	BYTE        Hash[0];
+} CIFileRuleData;
+
+enum {
+	CI_DENY = 0,
+	CI_ALLOW,
+	CI_FILE_ATTRIBUTES,
+};
 
 // The RSA public key modulus for the private key we use to sign the files on the server.
 // NOTE 1: This openssl modulus must be *REVERSED* to be usable with Microsoft APIs
@@ -227,9 +271,9 @@ char* GetSignatureName(const char* path, const char* country_code, BOOL bSilent)
 	HCERTSTORE hStore = NULL;
 	HCRYPTMSG hMsg = NULL;
 	PCCERT_CONTEXT pCertContext = NULL;
-	DWORD dwSize, dwEncoding, dwContentType, dwFormatType;
+	DWORD dwSize, dwEncoding, dwContentType, dwFormatType, dwSignerInfoSize = 0;
 	PCMSG_SIGNER_INFO pSignerInfo = NULL;
-	DWORD dwSignerInfo = 0;
+	// TODO: Do we really need CertInfo? Or can we just reference pSignerInfo?
 	CERT_INFO CertInfo = { 0 };
 	SPROG_PUBLISHERINFO ProgPubInfo = { 0 };
 	wchar_t *szFileName;
@@ -267,21 +311,21 @@ char* GetSignatureName(const char* path, const char* country_code, BOOL bSilent)
 		goto out;
 
 	// Get signer information size.
-	r = CryptMsgGetParam(hMsg, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSignerInfo);
+	r = CryptMsgGetParam(hMsg, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSignerInfoSize);
 	if (!r) {
 		uprintf("PKI: Failed to get signer size: %s", WinPKIErrorString());
 		goto out;
 	}
 
 	// Allocate memory for signer information.
-	pSignerInfo = (PCMSG_SIGNER_INFO)calloc(dwSignerInfo, 1);
+	pSignerInfo = (PCMSG_SIGNER_INFO)calloc(dwSignerInfoSize, 1);
 	if (!pSignerInfo) {
 		uprintf("PKI: Could not allocate memory for signer information");
 		goto out;
 	}
 
 	// Get Signer Information.
-	r = CryptMsgGetParam(hMsg, CMSG_SIGNER_INFO_PARAM, 0, (PVOID)pSignerInfo, &dwSignerInfo);
+	r = CryptMsgGetParam(hMsg, CMSG_SIGNER_INFO_PARAM, 0, (PVOID)pSignerInfo, &dwSignerInfoSize);
 	if (!r) {
 		uprintf("PKI: Failed to get signer information: %s", WinPKIErrorString());
 		goto out;
@@ -290,10 +334,9 @@ char* GetSignatureName(const char* path, const char* country_code, BOOL bSilent)
 	// Search for the signer certificate in the temporary certificate store.
 	CertInfo.Issuer = pSignerInfo->Issuer;
 	CertInfo.SerialNumber = pSignerInfo->SerialNumber;
-
 	pCertContext = CertFindCertificateInStore(hStore, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID)&CertInfo, NULL);
 	if (!pCertContext) {
-		uprintf("PKI: Failed to locate signer certificate in temporary store: %s", WinPKIErrorString());
+		uprintf("PKI: Failed to locate signer certificate in store: %s", WinPKIErrorString());
 		goto out;
 	}
 
@@ -339,6 +382,107 @@ out:
 	if (hMsg != NULL)
 		CryptMsgClose(hMsg);
 	return p;
+}
+
+// Fills the certificate's name and thumbprint.
+// Tries the issuer first, and if none is available, falls back to current cert.
+// Returns 0 for unsigned, -1 on error, 1 for signer or 2 for issuer.
+int GetIssuerCertificateInfo(uint8_t* cert, cert_info_t* info)
+{
+	int ret = 0;
+	DWORD dwSize, dwEncoding, dwContentType, dwFormatType, dwSignerInfoSize = 0;
+	WIN_CERTIFICATE* pWinCert = (WIN_CERTIFICATE*)cert;
+	CRYPT_DATA_BLOB signedDataBlob;
+	HCERTSTORE hStore = NULL;
+	HCRYPTMSG hMsg = NULL;
+	PCMSG_SIGNER_INFO pSignerInfo = NULL;
+	PCCERT_CONTEXT pCertContext[2] = { NULL, NULL };
+	PCCERT_CHAIN_CONTEXT pChainContext = NULL;
+	CERT_CHAIN_PARA chainPara;
+	int CertIndex = 0;
+
+	if (info == NULL)
+		return -1;
+	if (pWinCert == NULL || pWinCert->dwLength == 0)
+		return 0;
+
+	// Get message handle and store handle from the signed file.
+	signedDataBlob.cbData = pWinCert->dwLength;
+	signedDataBlob.pbData = pWinCert->bCertificate;
+	if (!CryptQueryObject(CERT_QUERY_OBJECT_BLOB, &signedDataBlob,
+		CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED, CERT_QUERY_FORMAT_FLAG_BINARY,
+		0, &dwEncoding, &dwContentType, &dwFormatType, &hStore, &hMsg, NULL)) {
+		uprintf("PKI: Failed to get signature: %s", WinPKIErrorString());
+		goto out;
+	}
+
+	// Get signer information size.
+	if (!CryptMsgGetParam(hMsg, CMSG_SIGNER_CERT_INFO_PARAM, 0, NULL, &dwSignerInfoSize)) {
+		uprintf("PKI: Failed to get signer size: %s", WinPKIErrorString());
+		goto out;
+	}
+
+	// Allocate memory for signer information.
+	pSignerInfo = (PCMSG_SIGNER_INFO)calloc(dwSignerInfoSize, 1);
+	if (pSignerInfo == NULL) {
+		uprintf("PKI: Could not allocate memory for signer information");
+		goto out;
+	}
+
+	// Get Signer Information.
+	if (!CryptMsgGetParam(hMsg, CMSG_SIGNER_CERT_INFO_PARAM, 0, pSignerInfo, &dwSignerInfoSize)) {
+		uprintf("PKI: Failed to get signer info: %s", WinPKIErrorString());
+		goto out;
+	}
+
+	// Search for the signer certificate in the temporary certificate store.
+	pCertContext[0] = CertFindCertificateInStore(hStore, ENCODING, 0, CERT_FIND_SUBJECT_CERT, (PVOID)pSignerInfo, NULL);
+	if (pCertContext[0] == NULL) {
+		uprintf("PKI: Failed to locate signer certificate in store: %s", WinPKIErrorString());
+		goto out;
+	}
+
+	// Build a certificate chain to get the issuer (CA) certificate.
+	memset(&chainPara, 0, sizeof(chainPara));
+	chainPara.cbSize = sizeof(CERT_CHAIN_PARA);
+	if (!CertGetCertificateChain(NULL, pCertContext[0], NULL, hStore, &chainPara, 0, NULL, &pChainContext)) {
+		uprintf("PKI: Failed to build certificate chain. Error code: %s", WinPKIErrorString());
+		goto out;
+	}
+
+	// Try to get the issuer's certificate (second certificate in the chain) if available
+	if (pChainContext->cChain > 0 && pChainContext->rgpChain[0]->cElement > 1) {
+		pCertContext[1] = pChainContext->rgpChain[0]->rgpElement[1]->pCertContext;
+		CertIndex = 1;
+	}
+
+	// Isolate the signing certificate subject name
+	dwSize = CertGetNameStringA(pCertContext[CertIndex], CERT_NAME_ATTR_TYPE, 0, szOID_COMMON_NAME,
+		info->name, sizeof(info->name));
+	if (dwSize <= 1) {
+		uprintf("PKI: Failed to get Subject Name");
+		goto out;
+	}
+
+	dwSize = SHA1_HASHSIZE;
+	if (!CryptHashCertificate(0, CALG_SHA1, 0, pCertContext[CertIndex]->pbCertEncoded,
+		pCertContext[CertIndex]->cbCertEncoded, info->thumbprint, &dwSize)) {
+		uprintf("PKI: Failed to compute the thumbprint: %s", WinPKIErrorString());
+		goto out;
+	}
+	ret = CertIndex + 1;
+
+out:
+	safe_free(pSignerInfo);
+	if (pCertContext[1] != NULL)
+		CertFreeCertificateContext(pCertContext[1]);
+	if (pCertContext[0] != NULL)
+		CertFreeCertificateContext(pCertContext[0]);
+	if (hStore != NULL)
+		CertCloseStore(hStore, 0);
+	if (hMsg != NULL)
+		CryptMsgClose(hMsg);
+	return ret;
 }
 
 // The timestamping authorities we use are RFC 3161 compliant
@@ -479,9 +623,8 @@ uint64_t GetSignatureTimeStamp(const char* path)
 	HMODULE hm;
 	HCERTSTORE hStore = NULL;
 	HCRYPTMSG hMsg = NULL;
-	DWORD dwSize, dwEncoding, dwContentType, dwFormatType;
+	DWORD dwSize, dwEncoding, dwContentType, dwFormatType, dwSignerInfoSize = 0;
 	PCMSG_SIGNER_INFO pSignerInfo = NULL;
-	DWORD dwSignerInfo = 0;
 	wchar_t *szFileName;
 	uint64_t timestamp = 0ULL, nested_timestamp;
 
@@ -515,21 +658,21 @@ uint64_t GetSignatureTimeStamp(const char* path)
 	}
 
 	// Get signer information size.
-	r = CryptMsgGetParam(hMsg, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSignerInfo);
+	r = CryptMsgGetParam(hMsg, CMSG_SIGNER_INFO_PARAM, 0, NULL, &dwSignerInfoSize);
 	if (!r) {
 		uprintf("PKI: Failed to get signer size: %s", WinPKIErrorString());
 		goto out;
 	}
 
 	// Allocate memory for signer information.
-	pSignerInfo = (PCMSG_SIGNER_INFO)calloc(dwSignerInfo, 1);
+	pSignerInfo = (PCMSG_SIGNER_INFO)calloc(dwSignerInfoSize, 1);
 	if (!pSignerInfo) {
 		uprintf("PKI: Could not allocate memory for signer information");
 		goto out;
 	}
 
 	// Get Signer Information.
-	r = CryptMsgGetParam(hMsg, CMSG_SIGNER_INFO_PARAM, 0, (PVOID)pSignerInfo, &dwSignerInfo);
+	r = CryptMsgGetParam(hMsg, CMSG_SIGNER_INFO_PARAM, 0, (PVOID)pSignerInfo, &dwSignerInfoSize);
 	if (!r) {
 		uprintf("PKI: Failed to get signer information: %s", WinPKIErrorString());
 		goto out;
@@ -539,14 +682,15 @@ uint64_t GetSignatureTimeStamp(const char* path)
 	timestamp = GetRFC3161TimeStamp(pSignerInfo);
 	if (timestamp)
 		uprintf("Note: '%s' has timestamp %s", (path==NULL)?mpath:path, TimestampToHumanReadable(timestamp));
-	// Because we are currently using both SHA-1 and SHA-256 signatures, we are in the very specific
-	// situation that Windows may say our executable passes Authenticode validation on Windows 7 or
-	// later (which includes timestamp validation) even if the SHA-1 signature or timestamps have
-	// been altered.
-	// This means that, if we don't also check the nested SHA-256 signature timestamp, an attacker
-	// could alter the SHA-1 one (which is the one we use by default for chronology validation) and
+	// Because we were using both SHA-1 and SHA-256 signatures during the SHA-256 transition, we were
+	// in the very specific situation where Windows could say that our executable passed Authenticode
+	// validation even if the SHA-1 signature or timestamps had been altered.
+	// This means that, unless we also check the nested signature timestamp, an attacker could alter
+	// the most vulnerable signature (which may also be the one used for chronology validation) and
 	// trick us into using an invalid timestamp value. To prevent this, we validate that, if we have
 	// both a regular and nested timestamp, they are within 60 seconds of each other.
+	// Even as we are no longer dual signing with two versions of SHA, we keep the code in case a
+	// major SHA-256 vulnerability is found and we have to go through a dual SHA again.
 	nested_timestamp = GetNestedRFC3161TimeStamp(pSignerInfo);
 	if (nested_timestamp)
 		uprintf("Note: '%s' has nested timestamp %s", (path==NULL)?mpath:path, TimestampToHumanReadable(nested_timestamp));
@@ -607,7 +751,7 @@ LONG ValidateSignature(HWND hDlg, const char* path)
 	trust_file.pcwszFilePath = utf8_to_wchar(path);
 	if (trust_file.pcwszFilePath == NULL) {
 		uprintf("PKI: Unable to convert '%s' to UTF16", path);
-		return ERROR_SEVERITY_ERROR | FAC(FACILITY_CERT) | ERROR_NOT_ENOUGH_MEMORY;
+		return RUFUS_ERROR(ERROR_NOT_ENOUGH_MEMORY);
 	}
 
 	trust_data.cbStruct = sizeof(trust_data);
@@ -744,5 +888,122 @@ out:
 		CryptDestroyHash(hHash);
 	if (hProv)
 		CryptReleaseContext(hProv, 0);
+	return r;
+}
+
+// The following SkuSiPolicy.p7b parsing code is derived from:
+// https://gist.github.com/mattifestation/92e545bf1ee5b68eeb71d254cec2f78e
+// by Matthew Graeber, with contributions by James Forshaw.
+BOOL ParseSKUSiPolicy(void)
+{
+	char path[MAX_PATH];
+	wchar_t* wpath = NULL;
+	BOOL r = FALSE;
+	DWORD i, dwEncoding, dwContentType, dwFormatType;
+	DWORD dwPolicySize = 0, dwBaseIndex = 0, dwSizeCount;
+	HCRYPTMSG hMsg = NULL;
+	CRYPT_DATA_BLOB pkcsData = { 0 };
+	DWORD* pdwEkuRules;
+	BYTE* pbRule;
+	CIHeader* Header;
+	CIFileRuleHeader* FileRuleHeader;
+	CIFileRuleData* FileRuleData;
+
+	pe256ssp_size = 0;
+	safe_free(pe256ssp);
+	// Must use sysnative for WOW
+	static_sprintf(path, "%s\\SecureBootUpdates\\SKUSiPolicy.p7b", sysnative_dir);
+	wpath = utf8_to_wchar(path);
+	if (wpath == NULL)
+		goto out;
+
+	r = CryptQueryObject(CERT_QUERY_OBJECT_FILE, wpath, CERT_QUERY_CONTENT_FLAG_ALL,
+		CERT_QUERY_FORMAT_FLAG_ALL, 0, &dwEncoding, &dwContentType, &dwFormatType, NULL,
+		&hMsg, NULL);
+	if (!r || dwContentType != CERT_QUERY_CONTENT_PKCS7_SIGNED)
+		goto out;
+
+	r = CryptMsgGetParam(hMsg, CMSG_CONTENT_PARAM, 0, NULL, &pkcsData.cbData);
+	if (!r || pkcsData.cbData == 0) {
+		uprintf("ParseSKUSiPolicy: Failed to retreive CMSG_CONTENT_PARAM size: %s", WindowsErrorString());
+		goto out;
+	}
+	pkcsData.pbData = malloc(pkcsData.cbData);
+	if (pkcsData.pbData == NULL)
+		goto out;
+	r = CryptMsgGetParam(hMsg, CMSG_CONTENT_PARAM, 0, pkcsData.pbData, &pkcsData.cbData);
+	if (!r) {
+		uprintf("ParseSKUSiPolicy: Failed to retreive CMSG_CONTENT_PARAM: %s", WindowsErrorString());
+		goto out;
+	}
+
+	// Now process the actual Security Policy content
+	if (pkcsData.pbData[0] == 4) {
+		dwPolicySize = pkcsData.pbData[1];
+		dwBaseIndex = 2;
+		if ((dwPolicySize & 0x80) == 0x80) {
+			dwSizeCount = dwPolicySize & 0x7F;
+			dwBaseIndex += dwSizeCount;
+			dwPolicySize = 0;
+			for (i = 0; i < dwSizeCount; i++) {
+				dwPolicySize = dwPolicySize << 8;
+				dwPolicySize = dwPolicySize | pkcsData.pbData[2 + i];
+			}
+		}
+	}
+
+	// Sanity checks
+	Header = (CIHeader*)&pkcsData.pbData[dwBaseIndex];
+	if (Header->HeaderLength + sizeof(uint32_t) != sizeof(CIHeader)) {
+		uprintf("ParseSKUSiPolicy: Unexpected Code Integrity Header size (0x%02x)", Header->HeaderLength);
+		goto out;
+	}
+	if (!CompareGUID(&Header->PolicyTypeGUID, &SKU_CODE_INTEGRITY_POLICY)) {
+		uprintf("ParseSKUSiPolicy: Unexpected Policy Type GUID %s", GuidToString(&Header->PolicyTypeGUID, TRUE));
+		goto out;
+	}
+
+	// Skip the EKU Rules
+	pdwEkuRules = (DWORD*) &pkcsData.pbData[dwBaseIndex + sizeof(CIHeader)];
+	for (i = 0; i < Header->EKURuleEntryCount; i++)
+		pdwEkuRules = &pdwEkuRules[(*pdwEkuRules + (2 * sizeof(DWORD) - 1)) / sizeof(DWORD)];
+
+	// Process the Files Rules
+	pbRule = (BYTE*)pdwEkuRules;
+	pe256ssp = malloc(Header->FileRuleEntryCount * PE256_HASHSIZE);
+	if (pe256ssp == NULL)
+		goto out;
+	for (i = 0; i < Header->FileRuleEntryCount; i++) {
+		FileRuleHeader = (CIFileRuleHeader*)pbRule;
+		pbRule = &pbRule[sizeof(CIFileRuleHeader)];
+		if (FileRuleHeader->FileNameLength != 0) {
+//			uprintf("%S", FileRuleHeader->FileName);
+			pbRule = &pbRule[((FileRuleHeader->FileNameLength + sizeof(DWORD) - 1) / sizeof(DWORD)) * sizeof(DWORD)];
+		}
+		FileRuleData = (CIFileRuleData*)pbRule;
+		if (FileRuleData->HashLength > 0x80) {
+			uprintf("ParseSKUSiPolicy: Unexpected hash length for entry %d (0x%02x)", i, FileRuleData->HashLength);
+			// We're probably screwed, so bail out
+			break;
+		}
+		//  We are only interested in 'DENY' type with PE256 hashes
+		if (FileRuleHeader->Type == CI_DENY && FileRuleData->HashLength == PE256_HASHSIZE) {
+			// Microsoft has the bad habit of duplicating entries - only add a hash if it's different from previous entry
+			if ((pe256ssp_size == 0) ||
+				(memcmp(&pe256ssp[(pe256ssp_size - 1) * PE256_HASHSIZE], FileRuleData->Hash, PE256_HASHSIZE) != 0)) {
+				memcpy(&pe256ssp[pe256ssp_size * PE256_HASHSIZE], FileRuleData->Hash, PE256_HASHSIZE);
+				pe256ssp_size++;
+			}
+		}
+		pbRule = &pbRule[sizeof(CIFileRuleData) + ((FileRuleData->HashLength + sizeof(DWORD) - 1) / sizeof(DWORD)) * sizeof(DWORD)];
+	}
+
+	r = TRUE;
+
+out:
+	if (hMsg != NULL)
+		CryptMsgClose(hMsg);
+	free(pkcsData.pbData);
+	free(wpath);
 	return r;
 }

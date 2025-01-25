@@ -2,7 +2,7 @@
 * Rufus: The Reliable USB Formatting Utility
 * Windows I/O redefinitions, that would be totally unnecessary had
 * Microsoft done a proper job with their asynchronous APIs.
-* Copyright © 2021 Pete Batard <pete@akeo.ie>
+* Copyright © 2021-2024 Pete Batard <pete@akeo.ie>
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -102,11 +102,13 @@ static __inline BOOL ReadFileAsync(HANDLE h, LPVOID lpBuffer, DWORD nNumberOfByt
 	ASYNC_FD* fd = (ASYNC_FD*)h;
 	fd->Overlapped.bOffsetUpdated = FALSE;
 	if (!ReadFile(fd->hFile, lpBuffer, nNumberOfBytesToRead, NULL,
-		(OVERLAPPED*)&fd->Overlapped))
-		// TODO: Is it possible to get ERROR_HANDLE_EOF here?
+		(OVERLAPPED*)&fd->Overlapped)) {
+		// Is it possible to get ERROR_HANDLE_EOF here?
+		assert(GetLastError() != ERROR_HANDLE_EOF);
 		fd->iStatus = (GetLastError() == ERROR_IO_PENDING) ? -1 : 0;
-	else
+	} else {
 		fd->iStatus = 1;
+	}
 	return (fd->iStatus != 0);
 }
 
@@ -165,11 +167,11 @@ static __inline BOOL GetSizeAsync(HANDLE h, LPDWORD lpNumberOfBytes)
 		SetLastError(ERROR_NO_MORE_ITEMS);
 		return FALSE;
 	}
-	// TODO: Use a timeout and call GetOverlappedResultEx() on Windows 8 and later
-	if (!GetOverlappedResult(fd->hFile, (OVERLAPPED*)&fd->Overlapped,
-		lpNumberOfBytes, (fd->iStatus < 0)))
-		return (GetLastError() == ERROR_HANDLE_EOF);
-	fd->Overlapped.Offset += *lpNumberOfBytes;
 	fd->Overlapped.bOffsetUpdated = TRUE;
+	if (!GetOverlappedResultEx(fd->hFile, (OVERLAPPED*)&fd->Overlapped,
+		lpNumberOfBytes, WRITE_TIMEOUT, (fd->iStatus < 0)))
+		// When reading from VHD/VHDX we get SECTOR_NOT_FOUND rather than EOF for the end of the drive
+		return (GetLastError() == ERROR_HANDLE_EOF || GetLastError() == ERROR_SECTOR_NOT_FOUND);
+	fd->Overlapped.Offset += *lpNumberOfBytes;
 	return TRUE;
 }
